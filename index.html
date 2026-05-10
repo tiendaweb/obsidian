@@ -167,7 +167,20 @@
     <div class="w-64 bg-obsidian-sidebar border-r border-obsidian-border flex flex-col h-full flex-shrink-0 transition-all duration-300" id="sidebar">
         <!-- Sidebar Header -->
         <div class="sidebar-header p-4 border-b border-obsidian-border flex justify-between items-center">
-            <h1 class="sidebar-collapsible font-bold text-lg truncate">Mi Bóveda</h1>
+            <div class="sidebar-collapsible relative min-w-0 flex-1 mr-2">
+                <button id="workspace-title" class="w-full flex items-center gap-2 font-bold text-lg truncate text-left hover:text-white transition-colors" title="Gestionar workspaces">
+                    <span id="workspace-title-text" class="truncate">Mi Bóveda</span>
+                    <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-obsidian-muted"></i>
+                </button>
+                <div id="workspace-menu" class="hidden absolute left-0 top-full mt-2 w-64 bg-obsidian-sidebar border border-obsidian-border rounded-lg shadow-xl z-40 p-2">
+                    <div class="text-xs uppercase tracking-wide text-obsidian-muted px-2 py-1">Workspaces</div>
+                    <div id="workspace-list" class="max-h-56 overflow-y-auto mb-2"></div>
+                    <button id="btn-create-workspace" class="w-full flex items-center gap-2 p-2 rounded hover:bg-obsidian-hover text-sm text-obsidian-muted hover:text-white transition-colors">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>Crear workspace</span>
+                    </button>
+                </div>
+            </div>
             <button id="toggle-sidebar" class="text-obsidian-muted hover:text-white transition-colors" title="Colapsar panel">
                 <i data-lucide="panel-left-close" class="w-5 h-5"></i>
             </button>
@@ -269,7 +282,9 @@
 
         // --- Application State ---
         const AppState = {
-            notes: {}, // { "id": { title: "Title", path: "folder/file.md", folderPath: "folder", filename: "file.md", content: "...", id: "uuid", modified: timestamp } }
+            workspaces: [], // [{ id: "uuid", name: "Mi Bóveda", lastNoteId: "uuid", created: timestamp, modified: timestamp }]
+            currentWorkspaceId: null,
+            notes: {}, // Notas cargadas del workspace actual: { "id": { title: "Title", path: "folder/file.md", folderPath: "folder", filename: "file.md", content: "...", id: "uuid", modified: timestamp } }
             currentNoteId: null,
             viewMode: 'edit', // 'edit', 'preview', 'graph'
             lastNoteViewMode: 'edit', // 'edit', 'preview' (se excluye 'graph')
@@ -279,12 +294,19 @@
         };
 
         // Database Keys
-        const DB_NOTES_KEY = 'obsidian_clone_notes';
+        const DB_NOTES_PREFIX = 'obsidian_clone_notes';
+        const LEGACY_DB_NOTES_KEY = 'obsidian_clone_notes';
+        const DB_WORKSPACES_KEY = 'obsidian_clone_workspaces';
         const DB_UI_KEY = 'obsidian_clone_ui_state';
 
         // --- DOM Elements ---
         const els = {
             sidebar: document.getElementById('sidebar'),
+            workspaceTitle: document.getElementById('workspace-title'),
+            workspaceTitleText: document.getElementById('workspace-title-text'),
+            workspaceMenu: document.getElementById('workspace-menu'),
+            workspaceList: document.getElementById('workspace-list'),
+            btnCreateWorkspace: document.getElementById('btn-create-workspace'),
             toggleSidebarBtn: document.getElementById('toggle-sidebar'),
             fileList: document.getElementById('file-list'),
             btnNewNote: document.getElementById('btn-new-note'),
@@ -453,6 +475,25 @@
             return mode === 'edit' || mode === 'preview';
         }
 
+        function getNotesStorageKey(workspaceId = AppState.currentWorkspaceId) {
+            return `${DB_NOTES_PREFIX}_${workspaceId}`;
+        }
+
+        function getCurrentWorkspace() {
+            return AppState.workspaces.find(workspace => workspace.id === AppState.currentWorkspaceId) || null;
+        }
+
+        function createWorkspaceMetadata(name = 'Mi Bóveda') {
+            const now = Date.now();
+            return {
+                id: generateId(),
+                name,
+                lastNoteId: null,
+                created: now,
+                modified: now
+            };
+        }
+
         async function loadUiState() {
             try {
                 const savedUiState = await localforage.getItem(DB_UI_KEY);
@@ -489,32 +530,118 @@
             }
         }
 
-        async function loadNotes() {
-            await loadUiState();
+        async function loadWorkspacesMetadata() {
+            const fallbackWorkspace = createWorkspaceMetadata('Mi Bóveda');
 
             try {
-                const savedNotes = await localforage.getItem(DB_NOTES_KEY);
-                if (savedNotes) {
-                    AppState.notes = savedNotes;
+                const savedMetadata = await localforage.getItem(DB_WORKSPACES_KEY);
+
+                if (savedMetadata?.workspaces?.length) {
+                    AppState.workspaces = savedMetadata.workspaces;
+                    AppState.currentWorkspaceId = savedMetadata.currentWorkspaceId;
                 } else {
+                    AppState.workspaces = [fallbackWorkspace];
+                    AppState.currentWorkspaceId = fallbackWorkspace.id;
+                    await saveWorkspacesMetadata();
+                }
+
+                if (!getCurrentWorkspace()) {
+                    AppState.currentWorkspaceId = AppState.workspaces[0]?.id || fallbackWorkspace.id;
+                    if (AppState.workspaces.length === 0) {
+                        AppState.workspaces = [fallbackWorkspace];
+                    }
+                    await saveWorkspacesMetadata();
+                }
+            } catch (err) {
+                console.error("Error cargando workspaces:", err);
+                AppState.workspaces = [fallbackWorkspace];
+                AppState.currentWorkspaceId = fallbackWorkspace.id;
+                showToast("Error al cargar workspaces; usando workspace por defecto", "error");
+            }
+        }
+
+        async function saveWorkspacesMetadata() {
+            try {
+                await localforage.setItem(DB_WORKSPACES_KEY, {
+                    currentWorkspaceId: AppState.currentWorkspaceId,
+                    workspaces: AppState.workspaces
+                });
+            } catch (err) {
+                console.error("Error guardando workspaces:", err);
+                showToast("Error al guardar workspaces", "error");
+            }
+        }
+
+        async function loadWorkspaceNotes(workspaceId = AppState.currentWorkspaceId) {
+            const notesKey = getNotesStorageKey(workspaceId);
+            const savedNotes = await localforage.getItem(notesKey);
+
+            if (savedNotes) {
+                AppState.notes = savedNotes;
+                return;
+            }
+
+            // Migración suave desde versiones anteriores que guardaban todo en una clave fija.
+            if (AppState.workspaces.length === 1) {
+                const legacyNotes = await localforage.getItem(LEGACY_DB_NOTES_KEY);
+                if (legacyNotes) {
+                    AppState.notes = legacyNotes;
+                    await saveNotes();
+                    return;
+                }
+            }
+
+            AppState.notes = {};
+        }
+
+        async function loadNotes() {
+            await loadUiState();
+            await loadWorkspacesMetadata();
+
+            try {
+                await loadWorkspaceNotes();
+                updateWorkspaceTitle();
+                renderWorkspaceMenu();
+
+                if (Object.keys(AppState.notes).length === 0 && AppState.workspaces.length === 1) {
                     // Nota inicial por defecto si está vacío
                     createNote("Bienvenido", "¡Bienvenido a tu clon de Obsidian!\n\nPuedes crear nuevas notas, escribir en **Markdown**, y enlazarlas usando `[[Nombre de la nota]]`.\n\nEjemplo: Prueba crear una nota y enlázala aquí.\n\nTambién puedes importar un archivo `.zip` que contenga archivos `.md`.");
+                } else {
+                    renderFileList();
+                    openLastWorkspaceNote();
                 }
-                renderFileList();
             } catch (err) {
                 console.error("Error cargando notas:", err);
                 showToast("Error al cargar notas locales", "error");
             }
         }
 
+        function syncCurrentEditorNote() {
+            if (!AppState.currentNoteId) return false;
+
+            const note = AppState.notes[AppState.currentNoteId];
+            if (!note) return false;
+
+            note.title = els.noteTitleInput.value.trim() || 'Sin título';
+            note.content = els.editor.value;
+            note.modified = Date.now();
+            return true;
+        }
+
         async function saveNotes() {
             try {
-                await localforage.setItem(DB_NOTES_KEY, AppState.notes);
+                await localforage.setItem(getNotesStorageKey(), AppState.notes);
                 els.tabStatus.classList.add('hidden'); // Ocultar indicador de guardado no guardado
             } catch (err) {
                 console.error("Error guardando notas:", err);
                 showToast("Error al guardar", "error");
             }
+        }
+
+        async function saveCurrentWorkspaceNotes() {
+            clearTimeout(saveTimeout);
+            syncCurrentEditorNote();
+            await saveNotes();
         }
 
         // Guardado con "Debounce" (espera a que el usuario deje de escribir)
@@ -523,21 +650,14 @@
             
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(() => {
-                if (AppState.currentNoteId) {
-                    const note = AppState.notes[AppState.currentNoteId];
-                    if(note) {
-                        note.title = els.noteTitleInput.value.trim() || 'Sin título';
-                        note.content = els.editor.value;
-                        note.modified = Date.now();
-                        
-                        saveNotes();
-                        renderFileList(); // Actualizar lista (por si cambió el título)
-                        els.tabTitle.textContent = note.title;
-                        
-                        // Si estamos en vista de grafo, actualizarlo en background (costoso, mejor evitarlo en cada pulsación, pero lo hacemos por completitud)
-                        if(AppState.viewMode === 'graph') {
-                             renderGraph();
-                        }
+                if (syncCurrentEditorNote()) {
+                    saveNotes();
+                    renderFileList(); // Actualizar lista (por si cambió el título)
+                    els.tabTitle.textContent = AppState.notes[AppState.currentNoteId]?.title || 'Sin título';
+                    
+                    // Si estamos en vista de grafo, actualizarlo en background (costoso, mejor evitarlo en cada pulsación, pero lo hacemos por completitud)
+                    if(AppState.viewMode === 'graph') {
+                         renderGraph();
                     }
                 }
             }, 1000); // Guardar 1 segundo después de dejar de escribir
@@ -583,6 +703,12 @@
                 saveNotes();
                 renderFileList();
                 
+                const workspace = getCurrentWorkspace();
+                if (workspace?.lastNoteId === id) {
+                    workspace.lastNoteId = null;
+                    saveWorkspacesMetadata();
+                }
+
                 if (AppState.currentNoteId === id) {
                     closeNote();
                 }
@@ -598,6 +724,12 @@
             if (!note) return;
 
             AppState.currentNoteId = id;
+            const workspace = getCurrentWorkspace();
+            if (workspace) {
+                workspace.lastNoteId = id;
+                workspace.modified = Date.now();
+                saveWorkspacesMetadata();
+            }
             
             // UI Updates
             els.emptyState.classList.add('hidden');
@@ -667,6 +799,157 @@
         }
 
         // --- STREAMING_CHUNK:Manejo de la Interfaz de Usuario ---
+
+        function updateWorkspaceTitle() {
+            const workspace = getCurrentWorkspace();
+            els.workspaceTitleText.textContent = workspace?.name || 'Workspace';
+            els.workspaceTitle.title = workspace ? `Workspace activo: ${workspace.name}` : 'Gestionar workspaces';
+        }
+
+        function toggleWorkspaceMenu(forceOpen = null) {
+            const shouldOpen = forceOpen === null ? els.workspaceMenu.classList.contains('hidden') : forceOpen;
+            els.workspaceMenu.classList.toggle('hidden', !shouldOpen);
+            if (shouldOpen) renderWorkspaceMenu();
+        }
+
+        function renderWorkspaceMenu() {
+            els.workspaceList.innerHTML = '';
+
+            AppState.workspaces.forEach(workspace => {
+                const item = document.createElement('div');
+                const isActive = workspace.id === AppState.currentWorkspaceId;
+                item.className = `group flex items-center gap-2 p-2 rounded text-sm ${isActive ? 'bg-obsidian-hover text-white' : 'text-obsidian-muted hover:bg-obsidian-hover hover:text-white'}`;
+
+                item.innerHTML = `
+                    <button class="workspace-switch flex-1 min-w-0 flex items-center gap-2 text-left" title="Cambiar a ${escapeHtml(workspace.name)}">
+                        <i data-lucide="${isActive ? 'check-circle-2' : 'circle'}" class="w-4 h-4 shrink-0 ${isActive ? 'text-obsidian-accent' : 'text-obsidian-muted'}"></i>
+                        <span class="truncate">${escapeHtml(workspace.name)}</span>
+                    </button>
+                    <button class="workspace-rename p-1 rounded hover:bg-obsidian-border" title="Renombrar workspace">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button class="workspace-delete p-1 rounded hover:bg-red-900/30 hover:text-red-400" title="Eliminar workspace">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                `;
+
+                item.querySelector('.workspace-switch').addEventListener('click', () => switchWorkspace(workspace.id));
+                item.querySelector('.workspace-rename').addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    renameWorkspace(workspace.id);
+                });
+                item.querySelector('.workspace-delete').addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    deleteWorkspace(workspace.id);
+                });
+
+                els.workspaceList.appendChild(item);
+            });
+
+            lucide.createIcons({ root: els.workspaceMenu });
+        }
+
+        function openLastWorkspaceNote() {
+            const workspace = getCurrentWorkspace();
+            if (workspace?.lastNoteId && AppState.notes[workspace.lastNoteId]) {
+                openNote(workspace.lastNoteId);
+            } else {
+                closeNote();
+            }
+        }
+
+        async function switchWorkspace(workspaceId) {
+            if (workspaceId === AppState.currentWorkspaceId) {
+                toggleWorkspaceMenu(false);
+                return;
+            }
+
+            const nextWorkspace = AppState.workspaces.find(workspace => workspace.id === workspaceId);
+            if (!nextWorkspace) return;
+
+            await saveCurrentWorkspaceNotes();
+
+            AppState.currentWorkspaceId = workspaceId;
+            AppState.currentNoteId = null;
+            AppState.expandedFolders = {};
+            await loadWorkspaceNotes(workspaceId);
+            await saveWorkspacesMetadata();
+
+            updateWorkspaceTitle();
+            renderWorkspaceMenu();
+            renderFileList();
+            openLastWorkspaceNote();
+            toggleWorkspaceMenu(false);
+            showToast(`Workspace activo: ${nextWorkspace.name}`);
+        }
+
+        async function createWorkspace() {
+            const name = prompt('Nombre del nuevo workspace:', 'Nuevo workspace')?.trim();
+            if (!name) return;
+
+            const workspace = createWorkspaceMetadata(name);
+            await saveCurrentWorkspaceNotes();
+            AppState.workspaces.push(workspace);
+            AppState.currentWorkspaceId = workspace.id;
+            AppState.currentNoteId = null;
+            AppState.notes = {};
+            AppState.expandedFolders = {};
+
+            await saveWorkspacesMetadata();
+            await saveNotes();
+            updateWorkspaceTitle();
+            renderWorkspaceMenu();
+            renderFileList();
+            closeNote();
+            toggleWorkspaceMenu(false);
+            showToast(`Workspace creado: ${workspace.name}`);
+        }
+
+        async function renameWorkspace(workspaceId) {
+            const workspace = AppState.workspaces.find(item => item.id === workspaceId);
+            if (!workspace) return;
+
+            const nextName = prompt('Nuevo nombre del workspace:', workspace.name)?.trim();
+            if (!nextName || nextName === workspace.name) return;
+
+            workspace.name = nextName;
+            workspace.modified = Date.now();
+            await saveWorkspacesMetadata();
+            updateWorkspaceTitle();
+            renderWorkspaceMenu();
+            showToast('Workspace renombrado');
+        }
+
+        async function deleteWorkspace(workspaceId) {
+            const workspace = AppState.workspaces.find(item => item.id === workspaceId);
+            if (!workspace) return;
+
+            if (AppState.workspaces.length === 1) {
+                showToast('Debe existir al menos un workspace', 'error');
+                return;
+            }
+
+            if (!confirm(`¿Eliminar el workspace "${workspace.name}" y sus notas locales?`)) return;
+
+            const wasActive = workspace.id === AppState.currentWorkspaceId;
+            await saveCurrentWorkspaceNotes();
+            AppState.workspaces = AppState.workspaces.filter(item => item.id !== workspaceId);
+            await localforage.removeItem(getNotesStorageKey(workspaceId));
+
+            if (wasActive) {
+                AppState.currentWorkspaceId = AppState.workspaces[0].id;
+                AppState.currentNoteId = null;
+                AppState.expandedFolders = {};
+                await loadWorkspaceNotes(AppState.currentWorkspaceId);
+                renderFileList();
+                openLastWorkspaceNote();
+            }
+
+            await saveWorkspacesMetadata();
+            updateWorkspaceTitle();
+            renderWorkspaceMenu();
+            showToast('Workspace eliminado');
+        }
 
         function renderFileList() {
             els.fileList.innerHTML = '';
@@ -1207,6 +1490,22 @@
         });
 
         // --- STREAMING_CHUNK:Configuración de Event Listeners ---
+
+        // Workspace Menu
+        els.workspaceTitle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleWorkspaceMenu();
+        });
+
+        els.workspaceMenu.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+
+        els.btnCreateWorkspace.addEventListener('click', createWorkspace);
+
+        document.addEventListener('click', () => {
+            toggleWorkspaceMenu(false);
+        });
 
         // Sidebar Toggle
         els.toggleSidebarBtn.addEventListener('click', () => {
