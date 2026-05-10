@@ -272,6 +272,7 @@
             notes: {}, // { "filename.md": { title: "Title", content: "...", id: "uuid", modified: timestamp } }
             currentNoteId: null,
             viewMode: 'edit', // 'edit', 'preview', 'graph'
+            lastNoteViewMode: 'edit', // 'edit', 'preview' (se excluye 'graph')
             isSidebarOpen: true,
             sidebarCollapsed: false
         };
@@ -396,12 +397,22 @@
 
         // --- STREAMING_CHUNK:Gestión de Datos (LocalForage) ---
 
+        function isNoteViewMode(mode) {
+            return mode === 'edit' || mode === 'preview';
+        }
+
         async function loadUiState() {
             try {
                 const savedUiState = await localforage.getItem(DB_UI_KEY);
-                if (savedUiState && typeof savedUiState.sidebarCollapsed === 'boolean') {
-                    AppState.sidebarCollapsed = savedUiState.sidebarCollapsed;
-                    AppState.isSidebarOpen = !savedUiState.sidebarCollapsed;
+                if (savedUiState) {
+                    if (typeof savedUiState.sidebarCollapsed === 'boolean') {
+                        AppState.sidebarCollapsed = savedUiState.sidebarCollapsed;
+                        AppState.isSidebarOpen = !savedUiState.sidebarCollapsed;
+                    }
+
+                    if (isNoteViewMode(savedUiState.lastNoteViewMode)) {
+                        AppState.lastNoteViewMode = savedUiState.lastNoteViewMode;
+                    }
                 }
             } catch (err) {
                 console.error("Error cargando estado de la interfaz:", err);
@@ -413,7 +424,8 @@
         async function saveUiState() {
             try {
                 await localforage.setItem(DB_UI_KEY, {
-                    sidebarCollapsed: AppState.sidebarCollapsed
+                    sidebarCollapsed: AppState.sidebarCollapsed,
+                    lastNoteViewMode: AppState.lastNoteViewMode
                 });
             } catch (err) {
                 console.error("Error guardando estado de la interfaz:", err);
@@ -549,8 +561,8 @@
                 else el.classList.remove('bg-obsidian-hover', 'border-obsidian-border');
             });
 
-            // Cambiar a modo edición por defecto al abrir
-            setViewMode('edit');
+            // Restaurar el último modo válido usado para notas (sin forzar edición)
+            setViewMode(AppState.lastNoteViewMode || 'edit');
         }
 
         function closeNote() {
@@ -638,7 +650,14 @@
             saveUiState();
         }
 
-        function setViewMode(mode) {
+        function setViewMode(mode, options = {}) {
+            const { persistNoteMode = false } = options;
+
+            if (persistNoteMode && isNoteViewMode(mode)) {
+                AppState.lastNoteViewMode = mode;
+                saveUiState();
+            }
+
             AppState.viewMode = mode;
             
             // Reset Button Styles
@@ -912,8 +931,8 @@
         });
 
         // View Toggles
-        els.btnEditMode.addEventListener('click', () => setViewMode('edit'));
-        els.btnPreviewMode.addEventListener('click', () => setViewMode('preview'));
+        els.btnEditMode.addEventListener('click', () => setViewMode('edit', { persistNoteMode: true }));
+        els.btnPreviewMode.addEventListener('click', () => setViewMode('preview', { persistNoteMode: true }));
         
         // Graph View Button
         els.btnGraphView.addEventListener('click', () => {
