@@ -401,8 +401,10 @@
         const DB_WORKSPACES_KEY = 'obsidian_clone_workspaces';
         const DB_UI_KEY = 'obsidian_clone_ui_state';
         const SHARE_PARAM_NAME = 'share';
+        const SHORT_SHARE_PARAM_NAME = 's';
         const SHARE_VERSION = 1;
-        const APP_VERSION = '1.2.0';
+        const ENCRYPTED_SHARE_VERSION = 2;
+        const APP_VERSION = '1.3.0';
         const GRAPH_LAYOUT_MODES = ['links', 'mindmap', 'folders', 'tags', 'modified', 'alphabetical', 'size', 'orphans', 'kanban'];
         const SHARE_PAYLOAD_MAX_CHARS = 120000;
         const SHARE_URL_SOFT_LIMIT = 1800;
@@ -544,6 +546,60 @@
             return Uint8Array.from(binary, char => char.charCodeAt(0));
         }
 
+        function concatUint8Arrays(...chunks) {
+            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            chunks.forEach(chunk => {
+                combined.set(chunk, offset);
+                offset += chunk.length;
+            });
+            return combined;
+        }
+
+        async function compressBytes(bytes) {
+            if (!('CompressionStream' in window)) return bytes;
+
+            const compressedStream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+            return new Uint8Array(await new Response(compressedStream).arrayBuffer());
+        }
+
+        async function decompressBytes(bytes, isCompressed) {
+            if (!isCompressed) return bytes;
+            if (!('DecompressionStream' in window)) {
+                throw new Error('Este navegador no puede descomprimir el enlace compartido');
+            }
+
+            const decompressedStream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+            return new Uint8Array(await new Response(decompressedStream).arrayBuffer());
+        }
+
+        async function encryptShareBytes(bytes) {
+            if (!window.crypto?.subtle) {
+                throw new Error('Este navegador no soporta cifrado Web Crypto');
+            }
+
+            const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 128 }, true, ['encrypt', 'decrypt']);
+            const rawKey = new Uint8Array(await crypto.subtle.exportKey('raw', key));
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const cipherBytes = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+
+            return `e.${base64UrlEncode(rawKey)}.${base64UrlEncode(concatUint8Arrays(iv, cipherBytes))}`;
+        }
+
+        async function decryptShareBytes(keyEncoded, encryptedEncoded) {
+            if (!window.crypto?.subtle) {
+                throw new Error('Este navegador no soporta descifrado Web Crypto');
+            }
+
+            const rawKey = base64UrlDecode(keyEncoded);
+            const encryptedBytes = base64UrlDecode(encryptedEncoded);
+            const iv = encryptedBytes.slice(0, 12);
+            const cipherBytes = encryptedBytes.slice(12);
+            const key = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
+            return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipherBytes));
+        }
+
         async function compressTextForUri(text) {
             const bytes = new TextEncoder().encode(text);
 
@@ -551,27 +607,38 @@
                 return `j.${base64UrlEncode(bytes)}`;
             }
 
-            const compressedStream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-            const compressedBytes = new Uint8Array(await new Response(compressedStream).arrayBuffer());
+            const compressedBytes = await compressBytes(bytes);
             return `d.${base64UrlEncode(compressedBytes)}`;
         }
 
-        async function decompressTextFromUri(payload) {
-            const [format, encoded] = payload.split('.', 2);
-            if (!format || !encoded) throw new Error('Formato de payload compartido inválido');
+        async function encodeEncryptedSharePayload(payload) {
+            const compactJson = JSON.stringify(compactSharedVaultPayload(payload));
+            const canCompress = 'CompressionStream' in window;
+            const shareBytes = await compressBytes(new TextEncoder().encode(compactJson));
+            const encryptedPayload = await encryptShareBytes(shareBytes);
+            return canCompress ? `${encryptedPayload}.c` : encryptedPayload;
+        }
 
+        async function decompressTextFromUri(payload) {
+            const [format, ...parts] = payload.split('.');
+            if (!format || !parts.length) throw new Error('Formato de payload compartido inválido');
+
+            if (format === 'e') {
+                const [keyEncoded, encryptedEncoded, flags = ''] = parts;
+                if (!keyEncoded || !encryptedEncoded) throw new Error('Formato de payload cifrado inválido');
+                const decryptedBytes = await decryptShareBytes(keyEncoded, encryptedEncoded);
+                const jsonBytes = await decompressBytes(decryptedBytes, flags.includes('c'));
+                return new TextDecoder().decode(jsonBytes);
+            }
+
+            const encoded = parts[0];
             const bytes = base64UrlDecode(encoded);
             if (format === 'j') {
                 return new TextDecoder().decode(bytes);
             }
 
             if (format === 'd') {
-                if (!('DecompressionStream' in window)) {
-                    throw new Error('Este navegador no puede descomprimir el enlace compartido');
-                }
-
-                const decompressedStream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-                const decompressedBytes = new Uint8Array(await new Response(decompressedStream).arrayBuffer());
+                const decompressedBytes = await decompressBytes(bytes, true);
                 return new TextDecoder().decode(decompressedBytes);
             }
 
@@ -611,7 +678,68 @@
             };
         }
 
+        function compactSharedVaultPayload(payload) {
+            return {
+                v: ENCRYPTED_SHARE_VERSION,
+                e: payload.exportedAt,
+                w: {
+                    i: payload.workspace?.id,
+                    n: payload.workspace?.name,
+                    l: payload.workspace?.lastNoteId,
+                    c: payload.workspace?.created,
+                    m: payload.workspace?.modified
+                },
+                u: {
+                    n: payload.ui?.currentNoteId,
+                    v: payload.ui?.viewMode,
+                    f: payload.ui?.expandedFolders || {}
+                },
+                n: Object.fromEntries(Object.entries(payload.notes || {}).map(([id, note]) => [id, {
+                    i: note.id || id,
+                    t: note.title,
+                    p: note.path,
+                    f: note.folderPath,
+                    m: note.filename,
+                    c: note.content,
+                    r: note.created,
+                    d: note.modified
+                }]))
+            };
+        }
+
+        function expandSharedVaultPayload(payload) {
+            if (payload?.v !== ENCRYPTED_SHARE_VERSION) return payload;
+
+            return {
+                version: SHARE_VERSION,
+                exportedAt: payload.e,
+                workspace: {
+                    id: payload.w?.i,
+                    name: payload.w?.n,
+                    lastNoteId: payload.w?.l,
+                    created: payload.w?.c,
+                    modified: payload.w?.m
+                },
+                ui: {
+                    currentNoteId: payload.u?.n,
+                    viewMode: payload.u?.v,
+                    expandedFolders: payload.u?.f || {}
+                },
+                notes: Object.fromEntries(Object.entries(payload.n || {}).map(([id, note]) => [id, {
+                    id: note.i || id,
+                    title: note.t || 'Sin título',
+                    path: note.p,
+                    folderPath: note.f,
+                    filename: note.m,
+                    content: note.c || '',
+                    created: note.r,
+                    modified: note.d
+                }]))
+            };
+        }
+
         function validateSharedVaultPayload(payload) {
+            payload = expandSharedVaultPayload(payload);
             if (!payload || typeof payload !== 'object') throw new Error('El JSON compartido no contiene una bóveda válida');
             if (payload.version !== SHARE_VERSION) throw new Error('Versión de bóveda compartida no soportada');
             if (!payload.notes || typeof payload.notes !== 'object') throw new Error('La bóveda compartida no contiene notas válidas');
@@ -626,11 +754,13 @@
         }
 
         function getSharedPayloadFromLocation() {
-            const queryPayload = new URLSearchParams(window.location.search).get(SHARE_PARAM_NAME);
+            const queryParams = new URLSearchParams(window.location.search);
+            const queryPayload = queryParams.get(SHORT_SHARE_PARAM_NAME) || queryParams.get(SHARE_PARAM_NAME);
             if (queryPayload) return queryPayload;
 
             const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash;
-            return new URLSearchParams(hash).get(SHARE_PARAM_NAME);
+            const hashParams = new URLSearchParams(hash);
+            return hashParams.get(SHORT_SHARE_PARAM_NAME) || hashParams.get(SHARE_PARAM_NAME);
         }
 
         async function readSharedVaultFromUrl() {
@@ -652,11 +782,20 @@
             }
         }
 
-        async function buildShareUrl(payload = serializeVault()) {
+        async function buildLegacyShareUrl(payload = serializeVault()) {
             const encoded = await compressTextForUri(JSON.stringify(payload));
             const url = new URL(window.location.href);
             url.searchParams.set(SHARE_PARAM_NAME, encoded);
             url.hash = '';
+            return { url: url.toString(), encoded };
+        }
+
+        async function buildShareUrl(payload = serializeVault()) {
+            const encoded = await encodeEncryptedSharePayload(payload);
+            const url = new URL(window.location.href);
+            url.searchParams.delete(SHARE_PARAM_NAME);
+            url.searchParams.delete(SHORT_SHARE_PARAM_NAME);
+            url.hash = `${SHORT_SHARE_PARAM_NAME}=${encoded}`;
             return { url: url.toString(), encoded };
         }
 
@@ -736,13 +875,13 @@
 
             showShareModal({
                 title: 'Compartir o importar bóveda',
-                subtitle: 'Genera un enlace comprimido o usa JSON cuando la URL sea demasiado grande.',
+                subtitle: 'Genera un enlace corto, cifrado y amigable, o usa JSON cuando la bóveda sea grande.',
                 content: `
                     ${renderSharedVaultSummary(payload)}
                     <div class="space-y-2">
                         <label class="text-sm font-medium text-white">Link compartible</label>
                         <textarea readonly class="w-full h-24 bg-obsidian-bg border border-obsidian-border rounded p-3 text-xs text-obsidian-text" placeholder="No se pudo generar el link">${escapeHtml(shareUrl)}</textarea>
-                        ${tooLarge ? '<p class="text-sm text-yellow-400">El payload es grande para una URL razonable; exporta/importa el JSON para mayor compatibilidad.</p>' : '<p class="text-sm text-obsidian-muted">El enlace usa JSON comprimido y codificado de forma segura para URI.</p>'}
+                        ${tooLarge ? '<p class="text-sm text-yellow-400">El payload cifrado es grande para una URL razonable; exporta/importa el JSON para mayor compatibilidad.</p>' : '<p class="text-sm text-obsidian-muted">El enlace usa un fragmento #s= con JSON compacto, comprimido, cifrado y codificado de forma segura para URI.</p>'}
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button id="btn-copy-share-link" class="px-3 py-2 rounded bg-obsidian-accent hover:bg-purple-700 text-white text-sm">Copiar link</button>
