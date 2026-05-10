@@ -265,12 +265,82 @@
             <!-- Graph View Area -->
             <div id="graph-view" class="absolute inset-0 hidden">
                 <div id="graph-container"></div>
-                <div class="absolute top-4 left-4 bg-obsidian-sidebar/80 p-2 rounded border border-obsidian-border backdrop-blur-sm z-10 pointer-events-none">
-                    <h3 class="text-white font-semibold text-sm mb-1">Vista de Grafo</h3>
-                    <p class="text-xs text-obsidian-muted">Usa el scroll para hacer zoom, arrastra para mover.</p>
+                <div class="absolute top-4 left-4 right-4 lg:right-auto lg:w-[30rem] bg-obsidian-sidebar/90 p-3 rounded-lg border border-obsidian-border backdrop-blur-sm z-10 shadow-xl">
+                    <div class="flex flex-col gap-3">
+                        <div>
+                            <h3 class="text-white font-semibold text-sm mb-1">Vista de Grafo</h3>
+                            <p class="text-xs text-obsidian-muted">Usa el scroll para hacer zoom, arrastra para mover y haz clic en un nodo para ver detalles.</p>
+                        </div>
+                        <label class="text-xs text-obsidian-muted" for="graph-layout-mode">
+                            Modo de visualización
+                            <select id="graph-layout-mode" class="mt-1 w-full bg-obsidian-bg border border-obsidian-border rounded px-3 py-2 text-sm text-obsidian-text outline-none focus:border-obsidian-accent">
+                                <option value="links">Grafo de enlaces</option>
+                                <option value="folders">Jerarquía por carpetas</option>
+                                <option value="tags">Agrupación por etiquetas</option>
+                                <option value="modified">Nodos por fecha de modificación</option>
+                                <option value="kanban">Lista / kanban si aplica</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
             </div>
             
+        </div>
+    </div>
+
+    <!-- Node Detail Modal -->
+    <div id="node-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-obsidian-sidebar border border-obsidian-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-obsidian-border flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                    <h2 id="node-modal-heading" class="text-xl font-semibold text-white truncate">Detalle de nota</h2>
+                    <p id="node-modal-path" class="text-sm text-obsidian-muted mt-1 truncate"></p>
+                </div>
+                <button id="btn-node-modal-close" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white shrink-0" title="Cerrar">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-5 space-y-4 overflow-y-auto">
+                <input type="hidden" id="node-modal-note-id">
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-obsidian-muted mb-1" for="node-modal-title">Título</label>
+                    <input id="node-modal-title" type="text" class="w-full bg-obsidian-bg border border-obsidian-border rounded px-3 py-2 text-white outline-none focus:border-obsidian-accent">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-obsidian-muted mb-1" for="node-modal-note-path">Ruta / carpeta</label>
+                    <input id="node-modal-note-path" type="text" class="w-full bg-obsidian-bg border border-obsidian-border rounded px-3 py-2 text-obsidian-text outline-none focus:border-obsidian-accent" placeholder="carpeta/nota.md">
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-obsidian-muted mb-1">Contenido resumido</label>
+                    <p id="node-modal-summary" class="bg-obsidian-bg border border-obsidian-border rounded p-3 text-sm text-obsidian-muted leading-relaxed"></p>
+                </div>
+                <div>
+                    <label class="block text-xs uppercase tracking-wide text-obsidian-muted mb-1" for="node-modal-content">Contenido editable</label>
+                    <textarea id="node-modal-content" class="w-full h-56 bg-obsidian-bg border border-obsidian-border rounded px-3 py-2 text-obsidian-text outline-none focus:border-obsidian-accent font-mono text-sm"></textarea>
+                </div>
+            </div>
+            <div class="p-5 border-t border-obsidian-border flex flex-wrap gap-2 justify-end">
+                <button id="btn-node-open-large" class="px-3 py-2 rounded bg-obsidian-hover hover:bg-obsidian-border text-white text-sm">Abrir en grande</button>
+                <button id="btn-node-open-note" class="px-3 py-2 rounded bg-obsidian-hover hover:bg-obsidian-border text-white text-sm">Abrir nota</button>
+                <button id="btn-node-save" class="px-3 py-2 rounded bg-obsidian-accent hover:bg-purple-700 text-white text-sm">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Note Modal -->
+    <div id="note-fullscreen-modal" class="hidden fixed inset-0 bg-obsidian-bg z-[55] flex flex-col">
+        <div class="h-12 border-b border-obsidian-border bg-obsidian-sidebar flex items-center px-4 gap-3">
+            <h2 id="fullscreen-note-title" class="font-semibold text-white truncate">Nota</h2>
+            <div class="flex-grow"></div>
+            <button id="btn-fullscreen-preview" class="px-3 py-1.5 rounded bg-obsidian-hover text-white text-sm">Preview</button>
+            <button id="btn-fullscreen-save" class="px-3 py-1.5 rounded bg-obsidian-accent hover:bg-purple-700 text-white text-sm">Guardar</button>
+            <button id="btn-fullscreen-close" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white" title="Cerrar">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
+            <textarea id="fullscreen-editor" class="w-full h-full bg-transparent text-obsidian-text resize-none border-none outline-none p-6 font-mono leading-relaxed"></textarea>
+            <div id="fullscreen-preview" class="markdown-body overflow-y-auto p-6 border-t lg:border-t-0 lg:border-l border-obsidian-border"></div>
         </div>
     </div>
 
@@ -310,6 +380,9 @@
             isSidebarOpen: true,
             sidebarCollapsed: false,
             expandedFolders: {},
+            graphLayoutMode: 'links',
+            selectedNodeId: null,
+            fullscreenNoteId: null,
             isReadOnlySharedPreview: false,
             localSnapshotBeforePreview: null
         };
@@ -356,6 +429,26 @@
             preview: document.getElementById('preview'),
             
             graphContainer: document.getElementById('graph-container'),
+            graphLayoutMode: document.getElementById('graph-layout-mode'),
+            nodeModal: document.getElementById('node-modal'),
+            nodeModalHeading: document.getElementById('node-modal-heading'),
+            nodeModalPath: document.getElementById('node-modal-path'),
+            nodeModalNoteId: document.getElementById('node-modal-note-id'),
+            nodeModalTitle: document.getElementById('node-modal-title'),
+            nodeModalNotePath: document.getElementById('node-modal-note-path'),
+            nodeModalSummary: document.getElementById('node-modal-summary'),
+            nodeModalContent: document.getElementById('node-modal-content'),
+            btnNodeModalClose: document.getElementById('btn-node-modal-close'),
+            btnNodeSave: document.getElementById('btn-node-save'),
+            btnNodeOpenNote: document.getElementById('btn-node-open-note'),
+            btnNodeOpenLarge: document.getElementById('btn-node-open-large'),
+            noteFullscreenModal: document.getElementById('note-fullscreen-modal'),
+            fullscreenNoteTitle: document.getElementById('fullscreen-note-title'),
+            fullscreenEditor: document.getElementById('fullscreen-editor'),
+            fullscreenPreview: document.getElementById('fullscreen-preview'),
+            btnFullscreenPreview: document.getElementById('btn-fullscreen-preview'),
+            btnFullscreenSave: document.getElementById('btn-fullscreen-save'),
+            btnFullscreenClose: document.getElementById('btn-fullscreen-close'),
             shareModal: document.getElementById('share-modal'),
             shareModalTitle: document.getElementById('share-modal-title'),
             shareModalSubtitle: document.getElementById('share-modal-subtitle'),
@@ -883,6 +976,10 @@
                     if (savedUiState.expandedFolders && typeof savedUiState.expandedFolders === 'object') {
                         AppState.expandedFolders = savedUiState.expandedFolders;
                     }
+
+                    if (['links', 'folders', 'tags', 'modified', 'kanban'].includes(savedUiState.graphLayoutMode)) {
+                        AppState.graphLayoutMode = savedUiState.graphLayoutMode;
+                    }
                 }
             } catch (err) {
                 console.error("Error cargando estado de la interfaz:", err);
@@ -896,7 +993,8 @@
                 await localforage.setItem(DB_UI_KEY, {
                     sidebarCollapsed: AppState.sidebarCollapsed,
                     lastNoteViewMode: AppState.lastNoteViewMode,
-                    expandedFolders: AppState.expandedFolders
+                    expandedFolders: AppState.expandedFolders,
+                    graphLayoutMode: AppState.graphLayoutMode
                 });
             } catch (err) {
                 console.error("Error guardando estado de la interfaz:", err);
@@ -1585,101 +1683,190 @@
             }
         }
 
+        // --- Modal de nodo y vista grande ---
+
+        function summarizeContent(content = '') {
+            const plainText = content
+                .replace(/```[\s\S]*?```/g, ' ')
+                .replace(/`([^`]+)`/g, '$1')
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+                .replace(/\[[^\]]*\]\([^)]*\)/g, ' ')
+                .replace(/[>#*_~\-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return plainText ? `${plainText.slice(0, 280)}${plainText.length > 280 ? '…' : ''}` : 'Esta nota no tiene contenido todavía.';
+        }
+
+        function openNodeModal(noteId) {
+            const note = AppState.notes[noteId];
+            if (!note) return;
+
+            AppState.selectedNodeId = noteId;
+            const path = getNotePath(note);
+            els.nodeModalNoteId.value = noteId;
+            els.nodeModalHeading.textContent = note.title || 'Sin título';
+            els.nodeModalPath.textContent = path || 'Sin carpeta';
+            els.nodeModalTitle.value = note.title || 'Sin título';
+            els.nodeModalNotePath.value = path;
+            els.nodeModalSummary.textContent = summarizeContent(note.content || '');
+            els.nodeModalContent.value = note.content || '';
+            els.nodeModal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeNodeModal() {
+            AppState.selectedNodeId = null;
+            els.nodeModal.classList.add('hidden');
+        }
+
+        function getModalNoteId() {
+            return els.nodeModalNoteId.value || AppState.selectedNodeId;
+        }
+
+        async function saveNodeModalChanges() {
+            if (AppState.isReadOnlySharedPreview) {
+                showToast('Esta vista compartida es de solo lectura. Importa la bóveda para editarla.', 'error');
+                return null;
+            }
+
+            const noteId = getModalNoteId();
+            const note = AppState.notes[noteId];
+            if (!note) return null;
+
+            const title = els.nodeModalTitle.value.trim() || 'Sin título';
+            const normalizedPath = normalizeNotePath(els.nodeModalNotePath.value.trim() || `${title}.md`);
+            const path = normalizedPath.endsWith('.md') ? normalizedPath : `${normalizedPath}.md`;
+            const pathParts = path.split('/');
+
+            note.title = title;
+            note.content = els.nodeModalContent.value;
+            note.path = path;
+            note.folderPath = pathParts.slice(0, -1).join('/');
+            note.filename = pathParts.pop() || `${title}.md`;
+            note.modified = Date.now();
+
+            if (AppState.currentNoteId === noteId) {
+                els.noteTitleInput.value = note.title;
+                els.editor.value = note.content;
+                els.tabTitle.textContent = note.title;
+                if (AppState.viewMode === 'preview') setViewMode('preview');
+            }
+
+            await saveNotes();
+            renderFileList();
+            renderGraph();
+            openNodeModal(noteId);
+            showToast('Nota guardada');
+            return noteId;
+        }
+
+        function renderFullscreenPreview() {
+            const raw = els.fullscreenEditor.value || '';
+            els.fullscreenPreview.innerHTML = marked.parse(raw)
+                .replace(/\[ \]/g, '<input type="checkbox" disabled>')
+                .replace(/\[x\]/g, '<input type="checkbox" checked disabled>');
+        }
+
+        function openFullscreenNote(noteId) {
+            const note = AppState.notes[noteId];
+            if (!note) return;
+            AppState.fullscreenNoteId = noteId;
+            els.fullscreenNoteTitle.textContent = note.title || 'Sin título';
+            els.fullscreenEditor.value = note.content || '';
+            renderFullscreenPreview();
+            els.noteFullscreenModal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeFullscreenNote() {
+            AppState.fullscreenNoteId = null;
+            els.noteFullscreenModal.classList.add('hidden');
+        }
+
+        async function saveFullscreenNote() {
+            if (AppState.isReadOnlySharedPreview) {
+                showToast('Esta vista compartida es de solo lectura. Importa la bóveda para editarla.', 'error');
+                return;
+            }
+            const noteId = AppState.fullscreenNoteId;
+            const note = AppState.notes[noteId];
+            if (!note) return;
+            note.content = els.fullscreenEditor.value;
+            note.modified = Date.now();
+
+            if (AppState.currentNoteId === noteId) {
+                els.editor.value = note.content;
+                if (AppState.viewMode === 'preview') setViewMode('preview');
+            }
+
+            await saveNotes();
+            renderFileList();
+            if (AppState.viewMode === 'graph') renderGraph();
+            if (AppState.selectedNodeId === noteId && !els.nodeModal.classList.contains('hidden')) openNodeModal(noteId);
+            renderFullscreenPreview();
+            showToast('Nota guardada');
+        }
+
         // --- STREAMING_CHUNK:Vista de Grafo (Vis-Network) ---
 
-        function renderGraph() {
-            const nodes = [];
-            const edges = [];
-            const nodeIds = new Map(); // Map title/path (lowercase) to node ID
+        function extractTags(content = '') {
+            const tags = new Set();
+            const regex = /(^|\s)#([\p{L}\p{N}_/-]+)/gu;
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                tags.add(`#${match[2]}`);
+            }
+            return Array.from(tags);
+        }
 
-            // 1. Crear nodos para todas las notas existentes
-            Object.values(AppState.notes).forEach(note => {
-                const lowerTitle = note.title.toLowerCase();
-                const lowerPath = getNotePath(note).toLowerCase();
-                const lowerPathWithoutExtension = lowerPath.replace(/\.md$/i, '');
+        function getModifiedBucket(timestamp) {
+            const modified = timestamp || Date.now();
+            const diffDays = Math.floor((Date.now() - modified) / 86400000);
+            if (diffDays <= 1) return { id: 'bucket_today', label: 'Últimas 24h', level: 0 };
+            if (diffDays <= 7) return { id: 'bucket_week', label: 'Última semana', level: 1 };
+            if (diffDays <= 30) return { id: 'bucket_month', label: 'Último mes', level: 2 };
+            return { id: 'bucket_old', label: 'Más antiguas', level: 3 };
+        }
 
-                nodeIds.set(lowerTitle, note.id);
-                nodeIds.set(lowerPath, note.id);
-                nodeIds.set(lowerPathWithoutExtension, note.id);
-                
-                // Determinar tamaño basado en conexiones (se calculará luego, por ahora base)
-                nodes.push({
-                    id: note.id,
-                    label: note.title,
-                    shape: 'dot',
-                    size: 15,
-                    color: {
-                        background: '#7c3aed', // Purple accent
-                        border: '#5b21b6',
-                        highlight: { background: '#8b5cf6', border: '#7c3aed' }
-                    },
-                    font: { color: '#dcddde', size: 14, face: 'Inter' }
-                });
-            });
-
-            // 2. Analizar enlaces y crear aristas
-            // También crearemos "nodos fantasmas" para enlaces a notas que no existen
-            let ghostNodeIdCounter = -1;
-
-            Object.values(AppState.notes).forEach(note => {
-                const links = extractLinks(note.content);
-                
-                links.forEach(linkTarget => {
-                    const lowerTarget = normalizeNotePath(linkTarget).toLowerCase();
-                    const lowerPathTarget = lowerTarget.endsWith('.md') ? lowerTarget : `${lowerTarget}.md`;
-                    let targetId = nodeIds.get(lowerTarget) || nodeIds.get(lowerPathTarget);
-
-                    // Si el enlace apunta a una nota que no existe, crear nodo fantasma
-                    if (!targetId) {
-                        targetId = `ghost_${ghostNodeIdCounter--}`;
-                        nodeIds.set(lowerTarget, targetId);
-                        
-                        nodes.push({
-                            id: targetId,
-                            label: linkTarget,
-                            shape: 'dot',
-                            size: 10,
-                            color: {
-                                background: '#3f3f46', // Dark gray
-                                border: '#27272a',
-                            },
-                            font: { color: '#71717a', size: 12, face: 'Inter', italic: true }
-                        });
-                    }
-
-                    // Crear la conexión
-                    edges.push({
-                        from: note.id,
-                        to: targetId,
-                        color: { color: '#52525b', highlight: '#7c3aed' },
-                        width: 1,
-                        smooth: { type: 'continuous' }
-                    });
-                });
-            });
-
-            // 3. Opcional: Aumentar tamaño de nodos más conectados
-            const connectionCounts = {};
-            edges.forEach(edge => {
-                connectionCounts[edge.from] = (connectionCounts[edge.from] || 0) + 1;
-                connectionCounts[edge.to] = (connectionCounts[edge.to] || 0) + 1;
-            });
-
-            nodes.forEach(node => {
-                const count = connectionCounts[node.id] || 0;
-                // Si no es un nodo fantasma (id numérico o alfanumérico largo)
-                if (typeof node.id === 'string' && !node.id.startsWith('ghost_')) {
-                    node.size = Math.min(15 + (count * 2), 40); // Cap size at 40
-                }
-            });
-
-
-            const data = {
-                nodes: new vis.DataSet(nodes),
-                edges: new vis.DataSet(edges)
+        function extractKanbanItems(content = '') {
+            const columns = {
+                todo: { id: 'kanban_todo', label: 'Por hacer', matcher: /^\s*[-*]\s+\[ \]\s+(.+)/i },
+                done: { id: 'kanban_done', label: 'Hecho', matcher: /^\s*[-*]\s+\[[xX]\]\s+(.+)/i },
+                list: { id: 'kanban_list', label: 'Lista', matcher: /^\s*[-*]\s+(?!\[[ xX]\])(.+)/i }
             };
+            const items = [];
+            content.split('\n').forEach(line => {
+                Object.values(columns).some(column => {
+                    const match = line.match(column.matcher);
+                    if (match) {
+                        items.push({ column: column.id, label: match[1].trim().slice(0, 60) });
+                        return true;
+                    }
+                    return false;
+                });
+            });
+            return items;
+        }
 
-            const options = {
+        function createNoteGraphNode(note, extra = {}) {
+            return {
+                id: note.id,
+                label: note.title,
+                title: getNotePath(note),
+                shape: 'dot',
+                size: 15,
+                color: {
+                    background: '#7c3aed',
+                    border: '#5b21b6',
+                    highlight: { background: '#8b5cf6', border: '#7c3aed' }
+                },
+                font: { color: '#dcddde', size: 14, face: 'Inter' },
+                ...extra
+            };
+        }
+
+        function getBaseGraphOptions(overrides = {}) {
+            return {
                 physics: {
                     barnesHut: {
                         gravitationalConstant: -2000,
@@ -1695,29 +1882,181 @@
                     tooltipDelay: 200,
                     zoomView: true,
                     dragView: true
-                }
+                },
+                ...overrides
             };
+        }
 
-            // Destruir red anterior si existe
-            if (network) {
-                network.destroy();
+        function buildLinksGraph() {
+            const nodes = [];
+            const edges = [];
+            const nodeIds = new Map();
+
+            Object.values(AppState.notes).forEach(note => {
+                const lowerTitle = note.title.toLowerCase();
+                const lowerPath = getNotePath(note).toLowerCase();
+                const lowerPathWithoutExtension = lowerPath.replace(/\.md$/i, '');
+
+                nodeIds.set(lowerTitle, note.id);
+                nodeIds.set(lowerPath, note.id);
+                nodeIds.set(lowerPathWithoutExtension, note.id);
+                nodes.push(createNoteGraphNode(note));
+            });
+
+            let ghostNodeIdCounter = -1;
+            Object.values(AppState.notes).forEach(note => {
+                extractLinks(note.content).forEach(linkTarget => {
+                    const lowerTarget = normalizeNotePath(linkTarget).toLowerCase();
+                    const lowerPathTarget = lowerTarget.endsWith('.md') ? lowerTarget : `${lowerTarget}.md`;
+                    let targetId = nodeIds.get(lowerTarget) || nodeIds.get(lowerPathTarget);
+
+                    if (!targetId) {
+                        targetId = `ghost_${ghostNodeIdCounter--}`;
+                        nodeIds.set(lowerTarget, targetId);
+                        nodes.push({
+                            id: targetId,
+                            label: linkTarget,
+                            shape: 'dot',
+                            size: 10,
+                            color: { background: '#3f3f46', border: '#27272a' },
+                            font: { color: '#71717a', size: 12, face: 'Inter', italic: true }
+                        });
+                    }
+
+                    edges.push({ from: note.id, to: targetId, color: { color: '#52525b', highlight: '#7c3aed' }, width: 1, smooth: { type: 'continuous' } });
+                });
+            });
+
+            const connectionCounts = {};
+            edges.forEach(edge => {
+                connectionCounts[edge.from] = (connectionCounts[edge.from] || 0) + 1;
+                connectionCounts[edge.to] = (connectionCounts[edge.to] || 0) + 1;
+            });
+
+            nodes.forEach(node => {
+                const count = connectionCounts[node.id] || 0;
+                if (typeof node.id === 'string' && !node.id.startsWith('ghost_')) {
+                    node.size = Math.min(15 + (count * 2), 40);
+                }
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions() };
+        }
+
+        function buildFoldersGraph() {
+            const nodes = [{ id: 'folder_root', label: 'Bóveda', shape: 'box', level: 0, color: { background: '#312e81', border: '#4c1d95' }, font: { color: '#fff', face: 'Inter' } }];
+            const edges = [];
+            const folderIds = new Map([['', 'folder_root']]);
+
+            function ensureFolder(path) {
+                const normalized = normalizeNotePath(path);
+                if (folderIds.has(normalized)) return folderIds.get(normalized);
+                const parts = normalized.split('/');
+                const parentPath = parts.slice(0, -1).join('/');
+                const parentId = ensureFolder(parentPath);
+                const folderId = `folder_${normalized || 'root'}`;
+                folderIds.set(normalized, folderId);
+                nodes.push({ id: folderId, label: parts[parts.length - 1], shape: 'box', level: parts.length, color: { background: '#1d4ed8', border: '#1e40af' }, font: { color: '#dbeafe', face: 'Inter' } });
+                edges.push({ from: parentId, to: folderId, arrows: 'to', color: { color: '#475569' } });
+                return folderId;
             }
 
+            Object.values(AppState.notes).forEach(note => {
+                const folderId = ensureFolder(getNoteFolderPath(note));
+                nodes.push(createNoteGraphNode(note, { shape: 'ellipse', level: getNoteFolderPath(note).split('/').filter(Boolean).length + 1 }));
+                edges.push({ from: folderId, to: note.id, arrows: 'to', color: { color: '#52525b' } });
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', nodeSpacing: 160, levelSeparation: 120 } }, physics: false }) };
+        }
+
+        function buildTagsGraph() {
+            const nodes = [];
+            const edges = [];
+            const tagIds = new Map();
+            Object.values(AppState.notes).forEach(note => {
+                nodes.push(createNoteGraphNode(note));
+                const tags = extractTags(note.content);
+                if (!tags.length) tags.push('#sin-etiquetas');
+                tags.forEach(tag => {
+                    const tagId = `tag_${tag}`;
+                    if (!tagIds.has(tag)) {
+                        tagIds.set(tag, tagId);
+                        nodes.push({ id: tagId, label: tag, shape: 'hexagon', size: 22, color: { background: '#0f766e', border: '#115e59' }, font: { color: '#ccfbf1', face: 'Inter' } });
+                    }
+                    edges.push({ from: tagId, to: note.id, color: { color: '#0f766e' }, width: 1.5 });
+                });
+            });
+            return { nodes, edges, options: getBaseGraphOptions({ physics: { barnesHut: { gravitationalConstant: -2800, springLength: 120 }, stabilization: { iterations: 120 } } }) };
+        }
+
+        function buildModifiedGraph() {
+            const nodes = [];
+            const edges = [];
+            const buckets = new Map();
+            Object.values(AppState.notes).forEach(note => {
+                const bucket = getModifiedBucket(note.modified);
+                if (!buckets.has(bucket.id)) {
+                    buckets.set(bucket.id, bucket);
+                    nodes.push({ id: bucket.id, label: bucket.label, shape: 'box', level: bucket.level, color: { background: '#92400e', border: '#78350f' }, font: { color: '#ffedd5', face: 'Inter' } });
+                }
+                nodes.push(createNoteGraphNode(note, { level: bucket.level + 1, title: `${getNotePath(note)}\nModificada: ${new Date(note.modified || Date.now()).toLocaleString()}` }));
+                edges.push({ from: bucket.id, to: note.id, arrows: 'to', color: { color: '#a16207' } });
+            });
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', nodeSpacing: 180, levelSeparation: 190 } }, physics: false }) };
+        }
+
+        function buildKanbanGraph() {
+            const columns = [
+                { id: 'kanban_todo', label: 'Por hacer' },
+                { id: 'kanban_done', label: 'Hecho' },
+                { id: 'kanban_list', label: 'Lista' },
+                { id: 'kanban_notes', label: 'Notas sin ítems' }
+            ];
+            const nodes = columns.map((column, index) => ({ id: column.id, label: column.label, shape: 'box', level: index, color: { background: '#581c87', border: '#6b21a8' }, font: { color: '#f3e8ff', face: 'Inter' } }));
+            const edges = [];
+
+            Object.values(AppState.notes).forEach(note => {
+                const items = extractKanbanItems(note.content);
+                const targetColumns = new Set(items.map(item => item.column));
+                if (!targetColumns.size) targetColumns.add('kanban_notes');
+                nodes.push(createNoteGraphNode(note, { shape: 'box', title: items.length ? items.map(item => `• ${item.label}`).join('\n') : getNotePath(note) }));
+                targetColumns.forEach(columnId => edges.push({ from: columnId, to: note.id, arrows: 'to', color: { color: '#9333ea' } }));
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', nodeSpacing: 190, levelSeparation: 140 } }, physics: false }) };
+        }
+
+        function buildGraphDataForMode(mode) {
+            switch (mode) {
+                case 'folders': return buildFoldersGraph();
+                case 'tags': return buildTagsGraph();
+                case 'modified': return buildModifiedGraph();
+                case 'kanban': return buildKanbanGraph();
+                case 'links':
+                default: return buildLinksGraph();
+            }
+        }
+
+        function renderGraph() {
+            const mode = AppState.graphLayoutMode || 'links';
+            if (els.graphLayoutMode) els.graphLayoutMode.value = mode;
+            const { nodes, edges, options } = buildGraphDataForMode(mode);
+            const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+
+            if (network) network.destroy();
             network = new vis.Network(els.graphContainer, data, options);
 
-            // Manejar click en nodos
             network.on("click", function (params) {
                 if (params.nodes.length > 0) {
                     const nodeId = params.nodes[0];
                     if (typeof nodeId === 'string' && nodeId.startsWith('ghost_')) {
-                        // Click en nota fantasma -> preguntar si crear
                         const clickedNode = nodes.find(n => n.id === nodeId);
                         if(clickedNode && confirm(`La nota "${clickedNode.label}" no existe. ¿Deseas crearla?`)) {
                             createNote(clickedNode.label, `# ${clickedNode.label}\n\n`);
                         }
-                    } else {
-                        // Click en nota existente -> abrirla
-                        openNote(nodeId);
+                    } else if (AppState.notes[nodeId]) {
+                        openNodeModal(nodeId);
                     }
                 }
             });
@@ -1927,6 +2266,37 @@
         els.btnDeleteNote.addEventListener('click', () => {
             if(AppState.currentNoteId) deleteNote(AppState.currentNoteId);
         });
+
+        // Graph layout controls
+        els.graphLayoutMode.addEventListener('change', () => {
+            AppState.graphLayoutMode = els.graphLayoutMode.value;
+            saveUiState();
+            renderGraph();
+        });
+
+        // Node modal controls
+        els.btnNodeModalClose.addEventListener('click', closeNodeModal);
+        els.nodeModal.addEventListener('click', (event) => {
+            if (event.target === els.nodeModal) closeNodeModal();
+        });
+        els.btnNodeSave.addEventListener('click', saveNodeModalChanges);
+        els.btnNodeOpenNote.addEventListener('click', async () => {
+            const noteId = await saveNodeModalChanges();
+            if (noteId) {
+                closeNodeModal();
+                openNote(noteId);
+            }
+        });
+        els.btnNodeOpenLarge.addEventListener('click', async () => {
+            const noteId = await saveNodeModalChanges();
+            if (noteId) openFullscreenNote(noteId);
+        });
+
+        // Fullscreen note controls
+        els.btnFullscreenPreview.addEventListener('click', renderFullscreenPreview);
+        els.fullscreenEditor.addEventListener('input', renderFullscreenPreview);
+        els.btnFullscreenSave.addEventListener('click', saveFullscreenNote);
+        els.btnFullscreenClose.addEventListener('click', closeFullscreenNote);
 
         // View Toggles
         els.btnEditMode.addEventListener('click', () => setViewMode('edit', { persistNoteMode: true }));
