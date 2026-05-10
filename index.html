@@ -375,6 +375,14 @@
             return pathParts.slice(0, -1).join('/');
         }
 
+        function getNoteFilename(note) {
+            if (note.filename) return note.filename;
+
+            const pathParts = getNotePath(note).split('/');
+            const filename = pathParts[pathParts.length - 1];
+            return filename || `${note.title || 'Sin título'}.md`;
+        }
+
         function findNoteByLinkTarget(target) {
             const normalizedTarget = normalizeNotePath(target).toLowerCase();
             const normalizedPathTarget = normalizedTarget.endsWith('.md') ? normalizedTarget : `${normalizedTarget}.md`;
@@ -664,6 +672,60 @@
             els.fileList.innerHTML = '';
 
             const tree = { folders: new Map(), notes: [] };
+            const dragHighlightClasses = ['bg-obsidian-hover', 'border-obsidian-accent', 'ring-1', 'ring-obsidian-accent'];
+
+            const getDraggedNoteId = (event) => event.dataTransfer.getData('application/x-obsidian-note-id') || event.dataTransfer.getData('text/plain');
+            const hasDraggedNote = (event) => Array.from(event.dataTransfer.types || []).includes('application/x-obsidian-note-id');
+
+            const addDropFeedback = (element) => element.classList.add(...dragHighlightClasses);
+            const removeDropFeedback = (element) => element.classList.remove(...dragHighlightClasses);
+
+            const moveNoteToFolder = (noteId, folderPath = '') => {
+                const note = AppState.notes[noteId];
+                if (!note) return;
+
+                const normalizedFolderPath = normalizeNotePath(folderPath);
+                const filename = getNoteFilename(note);
+                const nextPath = normalizeNotePath([normalizedFolderPath, filename].filter(Boolean).join('/'));
+
+                if (getNotePath(note) === nextPath) return;
+
+                note.folderPath = normalizedFolderPath;
+                note.filename = filename;
+                note.path = nextPath;
+                note.modified = Date.now();
+
+                saveNotes();
+                renderFileList();
+                if (AppState.viewMode === 'graph') renderGraph();
+                showToast(normalizedFolderPath ? `Nota movida a ${normalizedFolderPath}` : 'Nota movida a la raíz');
+            };
+
+            const setupDropTarget = (element, getFolderPath, options = {}) => {
+                element.ondragover = (event) => {
+                    if (!hasDraggedNote(event)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.dataTransfer.dropEffect = 'move';
+                    addDropFeedback(element);
+                };
+
+                element.ondragleave = (event) => {
+                    if (element.contains(event.relatedTarget)) return;
+                    removeDropFeedback(element);
+                };
+
+                element.ondrop = (event) => {
+                    if (!hasDraggedNote(event)) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    removeDropFeedback(element);
+
+                    const noteId = getDraggedNoteId(event);
+                    if (!noteId || noteId === options.noteId) return;
+                    moveNoteToFolder(noteId, getFolderPath(event));
+                };
+            };
 
             const getOrCreateFolder = (parent, name, path) => {
                 if (!parent.folders.has(name)) {
@@ -689,10 +751,14 @@
             const sortFolders = folders => Array.from(folders.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
             const sortNotes = notes => notes.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 
+            setupDropTarget(els.fileList, () => '');
+
             const renderNote = (note, depth) => {
                 const item = document.createElement('div');
                 item.className = `file-item flex items-center p-2 rounded cursor-pointer mb-1 border border-transparent hover:bg-obsidian-hover transition-colors ${note.id === AppState.currentNoteId ? 'bg-obsidian-hover border-obsidian-border' : ''}`;
                 item.dataset.id = note.id;
+                item.dataset.folderPath = getNoteFolderPath(note);
+                item.draggable = true;
                 item.style.paddingLeft = AppState.sidebarCollapsed ? '' : `${0.5 + (depth * 1)}rem`;
 
                 item.innerHTML = `
@@ -701,6 +767,17 @@
                 `;
 
                 item.addEventListener('click', () => openNote(note.id));
+                item.addEventListener('dragstart', (event) => {
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('application/x-obsidian-note-id', note.id);
+                    event.dataTransfer.setData('text/plain', note.id);
+                    item.classList.add('opacity-60');
+                });
+                item.addEventListener('dragend', () => {
+                    item.classList.remove('opacity-60');
+                    document.querySelectorAll('.folder-item, .file-item, #file-list').forEach(removeDropFeedback);
+                });
+                setupDropTarget(item, () => getNoteFolderPath(note), { noteId: note.id });
                 els.fileList.appendChild(item);
             };
 
@@ -708,6 +785,7 @@
                 const isExpanded = AppState.expandedFolders[folder.path] !== false;
                 const folderItem = document.createElement('div');
                 folderItem.className = 'folder-item flex items-center p-2 rounded cursor-pointer mb-1 border border-transparent hover:bg-obsidian-hover transition-colors';
+                folderItem.dataset.folderPath = folder.path;
                 folderItem.style.paddingLeft = AppState.sidebarCollapsed ? '' : `${0.5 + (depth * 1)}rem`;
 
                 folderItem.innerHTML = `
@@ -721,6 +799,7 @@
                     saveUiState();
                     renderFileList();
                 });
+                setupDropTarget(folderItem, () => folder.path);
 
                 els.fileList.appendChild(folderItem);
 
@@ -965,13 +1044,28 @@
             });
         }
 
-        // --- STREAMING_CHUNK:Importación de Archivos ZIP ---
+        // --- STREAMING_CHUNK:Importación Drag-and-Drop de Archivos ---
 
-        els.zipUpload.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        async function importMarkdownFile(file) {
+            const content = await file.text();
+            const filename = file.name;
+            const title = sanitizeFilename(filename);
+            const id = createNote(title, content);
 
-            els.zipUpload.value = ''; // Reset input
+            if (AppState.notes[id]) {
+                AppState.notes[id].filename = filename;
+                AppState.notes[id].path = normalizeNotePath(filename);
+                AppState.notes[id].folderPath = '';
+                AppState.notes[id].modified = file.lastModified || Date.now();
+                await saveNotes();
+                renderFileList();
+            }
+
+            showToast(`Nota importada: ${title}`);
+            if (AppState.viewMode === 'graph') renderGraph();
+        }
+
+        async function importZipFile(file) {
             showToast("Procesando archivo ZIP...", "info");
 
             try {
@@ -1056,6 +1150,60 @@
                 console.error("Error leyendo ZIP:", err);
                 showToast("Error al procesar el archivo ZIP", "error");
             }
+        }
+
+        function isFileDrag(event) {
+            return Array.from(event.dataTransfer?.types || []).includes('Files');
+        }
+
+        function setBodyDropFeedback(enabled) {
+            document.body.classList.toggle('ring-4', enabled);
+            document.body.classList.toggle('ring-obsidian-accent', enabled);
+            document.body.classList.toggle('ring-inset', enabled);
+        }
+
+        async function handleDroppedFiles(files) {
+            const supportedFiles = Array.from(files).filter(file => /\.(zip|md)$/i.test(file.name));
+
+            if (supportedFiles.length === 0) {
+                showToast('Suelta un archivo .zip o .md válido.', 'error');
+                return;
+            }
+
+            for (const file of supportedFiles) {
+                if (/\.zip$/i.test(file.name)) {
+                    await importZipFile(file);
+                } else if (/\.md$/i.test(file.name)) {
+                    await importMarkdownFile(file);
+                }
+            }
+        }
+
+        els.zipUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            els.zipUpload.value = ''; // Reset input
+            await importZipFile(file);
+        });
+
+        document.body.addEventListener('dragover', (event) => {
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+            setBodyDropFeedback(true);
+        });
+
+        document.body.addEventListener('dragleave', (event) => {
+            if (event.relatedTarget && document.body.contains(event.relatedTarget)) return;
+            setBodyDropFeedback(false);
+        });
+
+        document.body.addEventListener('drop', async (event) => {
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+            setBodyDropFeedback(false);
+            await handleDroppedFiles(event.dataTransfer.files);
         });
 
         // --- STREAMING_CHUNK:Configuración de Event Listeners ---
