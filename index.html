@@ -228,6 +228,23 @@
                 <button id="btn-edit-mode" class="px-3 py-1 text-xs bg-obsidian-hover text-white">Editar</button>
                 <button id="btn-preview-mode" class="px-3 py-1 text-xs bg-obsidian-bg text-obsidian-muted hover:text-white">Leer</button>
             </div>
+
+            <!-- Graph layout selector in the header -->
+            <div id="header-graph-controls" class="hidden items-center gap-2 mr-2">
+                <label for="graph-layout-mode" class="text-xs text-obsidian-muted hidden sm:inline">Organizar</label>
+                <select id="graph-layout-mode" class="bg-obsidian-sidebar border border-obsidian-border rounded px-2 py-1 text-xs text-obsidian-text outline-none focus:border-obsidian-accent max-w-[13rem]">
+                    <option value="links">Grafo de enlaces</option>
+                    <option value="mindmap">Mindmap por encabezados</option>
+                    <option value="folders">Jerarquía por carpetas</option>
+                    <option value="tags">Agrupación por etiquetas</option>
+                    <option value="modified">Línea de tiempo</option>
+                    <option value="alphabetical">Índice alfabético</option>
+                    <option value="size">Tamaño / densidad</option>
+                    <option value="orphans">Conectadas y huérfanas</option>
+                    <option value="kanban">Lista / kanban si aplica</option>
+                </select>
+            </div>
+            <span id="app-version" class="text-[10px] uppercase tracking-wide text-obsidian-muted border border-obsidian-border rounded px-2 py-1 mr-2" title="Versión de la app">v...</span>
             
             <!-- Header Actions -->
              <button id="btn-delete-note" class="p-1.5 rounded hover:bg-red-900/30 text-obsidian-muted hover:text-red-400 transition-colors hidden mr-2" title="Eliminar nota">
@@ -271,16 +288,7 @@
                             <h3 class="text-white font-semibold text-sm mb-1">Vista de Grafo</h3>
                             <p class="text-xs text-obsidian-muted">Usa el scroll para hacer zoom, arrastra para mover y haz clic en un nodo para ver detalles.</p>
                         </div>
-                        <label class="text-xs text-obsidian-muted" for="graph-layout-mode">
-                            Modo de visualización
-                            <select id="graph-layout-mode" class="mt-1 w-full bg-obsidian-bg border border-obsidian-border rounded px-3 py-2 text-sm text-obsidian-text outline-none focus:border-obsidian-accent">
-                                <option value="links">Grafo de enlaces</option>
-                                <option value="folders">Jerarquía por carpetas</option>
-                                <option value="tags">Agrupación por etiquetas</option>
-                                <option value="modified">Nodos por fecha de modificación</option>
-                                <option value="kanban">Lista / kanban si aplica</option>
-                            </select>
-                        </label>
+                        <p class="text-xs text-obsidian-muted">Cambia entre mindmap, enlaces, carpetas, etiquetas, timeline y más desde el selector <span class="text-white">Organizar</span> del header.</p>
                     </div>
                 </div>
             </div>
@@ -394,6 +402,8 @@
         const DB_UI_KEY = 'obsidian_clone_ui_state';
         const SHARE_PARAM_NAME = 'share';
         const SHARE_VERSION = 1;
+        const APP_VERSION = '1.2.0';
+        const GRAPH_LAYOUT_MODES = ['links', 'mindmap', 'folders', 'tags', 'modified', 'alphabetical', 'size', 'orphans', 'kanban'];
         const SHARE_PAYLOAD_MAX_CHARS = 120000;
         const SHARE_URL_SOFT_LIMIT = 1800;
 
@@ -420,6 +430,7 @@
             tabTitle: document.getElementById('tab-title'),
             tabStatus: document.getElementById('tab-status'),
             viewToggles: document.getElementById('view-toggles'),
+            headerGraphControls: document.getElementById('header-graph-controls'),
             btnEditMode: document.getElementById('btn-edit-mode'),
             btnPreviewMode: document.getElementById('btn-preview-mode'),
             btnDeleteNote: document.getElementById('btn-delete-note'),
@@ -430,6 +441,7 @@
             
             graphContainer: document.getElementById('graph-container'),
             graphLayoutMode: document.getElementById('graph-layout-mode'),
+            appVersion: document.getElementById('app-version'),
             nodeModal: document.getElementById('node-modal'),
             nodeModalHeading: document.getElementById('node-modal-heading'),
             nodeModalPath: document.getElementById('node-modal-path'),
@@ -456,6 +468,11 @@
             btnShareClose: document.getElementById('btn-share-close'),
             toast: document.getElementById('toast')
         };
+
+        if (els.appVersion) {
+            els.appVersion.textContent = `v${APP_VERSION}`;
+            els.appVersion.title = `Versión de la app ${APP_VERSION}`;
+        }
 
         // --- Vis Network Instance ---
         let network = null;
@@ -977,7 +994,7 @@
                         AppState.expandedFolders = savedUiState.expandedFolders;
                     }
 
-                    if (['links', 'folders', 'tags', 'modified', 'kanban'].includes(savedUiState.graphLayoutMode)) {
+                    if (GRAPH_LAYOUT_MODES.includes(savedUiState.graphLayoutMode)) {
                         AppState.graphLayoutMode = savedUiState.graphLayoutMode;
                     }
                 }
@@ -1255,6 +1272,8 @@
             els.activeTab.classList.add('hidden');
             els.viewToggles.classList.add('hidden');
             els.btnDeleteNote.classList.add('hidden');
+            els.headerGraphControls.classList.add('hidden');
+            els.headerGraphControls.classList.remove('flex');
             
             document.querySelectorAll('.file-item').forEach(el => {
                 el.classList.remove('bg-obsidian-hover', 'border-obsidian-border');
@@ -1632,6 +1651,8 @@
 
             els.btnGraphView.classList.remove('text-obsidian-accent');
             els.btnGraphView.classList.add('text-obsidian-muted');
+            els.headerGraphControls.classList.add('hidden');
+            els.headerGraphControls.classList.remove('flex');
 
             if (mode === 'edit') {
                 els.btnEditMode.classList.replace('bg-obsidian-bg', 'bg-obsidian-hover');
@@ -1678,6 +1699,8 @@
                 els.activeTab.classList.add('hidden');
                 els.viewToggles.classList.add('hidden');
                 els.btnDeleteNote.classList.add('hidden');
+                els.headerGraphControls.classList.remove('hidden');
+                els.headerGraphControls.classList.add('flex');
 
                 renderGraph();
             }
@@ -1846,6 +1869,56 @@
                 });
             });
             return items;
+        }
+
+
+        function extractHeadings(content = '') {
+            return content
+                .split('\n')
+                .map(line => line.match(/^(#{1,6})\s+(.+)$/))
+                .filter(Boolean)
+                .map(match => ({ level: match[1].length, label: match[2].replace(/[#*_`~]/g, '').trim().slice(0, 80) }))
+                .filter(heading => heading.label);
+        }
+
+        function getAlphabeticalBucket(title = '') {
+            const firstChar = title.trim().charAt(0).toUpperCase();
+            if (!firstChar) return { id: 'alpha_empty', label: 'Sin título', level: 0 };
+            if (/^[0-9]$/.test(firstChar)) return { id: 'alpha_numbers', label: '0-9', level: 0 };
+            if (/^[A-ZÁÉÍÓÚÜÑ]$/.test(firstChar)) return { id: `alpha_${firstChar}`, label: firstChar, level: 0 };
+            return { id: 'alpha_symbols', label: 'Símbolos', level: 0 };
+        }
+
+        function getSizeBucket(content = '') {
+            const words = content.trim().split(/\s+/).filter(Boolean).length;
+            if (words === 0) return { id: 'size_empty', label: 'Vacías', level: 0, color: '#3f3f46' };
+            if (words < 100) return { id: 'size_short', label: 'Cortas', level: 1, color: '#0f766e' };
+            if (words < 500) return { id: 'size_medium', label: 'Medianas', level: 2, color: '#1d4ed8' };
+            return { id: 'size_long', label: 'Largas', level: 3, color: '#9f1239' };
+        }
+
+        function buildLinkConnectionCounts() {
+            const noteLookup = new Map();
+            const counts = {};
+
+            Object.values(AppState.notes).forEach(note => {
+                counts[note.id] = 0;
+                noteLookup.set(note.title.toLowerCase(), note.id);
+                noteLookup.set(getNotePath(note).toLowerCase(), note.id);
+                noteLookup.set(getNotePath(note).replace(/\.md$/i, '').toLowerCase(), note.id);
+            });
+
+            Object.values(AppState.notes).forEach(note => {
+                extractLinks(note.content).forEach(linkTarget => {
+                    const lowerTarget = normalizeNotePath(linkTarget).toLowerCase();
+                    const lowerPathTarget = lowerTarget.endsWith('.md') ? lowerTarget : `${lowerTarget}.md`;
+                    const targetId = noteLookup.get(lowerTarget) || noteLookup.get(lowerPathTarget);
+                    counts[note.id] = (counts[note.id] || 0) + 1;
+                    if (targetId) counts[targetId] = (counts[targetId] || 0) + 1;
+                });
+            });
+
+            return counts;
         }
 
         function createNoteGraphNode(note, extra = {}) {
@@ -2027,11 +2100,104 @@
             return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', nodeSpacing: 190, levelSeparation: 140 } }, physics: false }) };
         }
 
+
+        function buildMindmapGraph() {
+            const nodes = [{ id: 'mindmap_root', label: 'Mindmap', shape: 'star', size: 28, level: 0, color: { background: '#7c3aed', border: '#5b21b6' }, font: { color: '#fff', face: 'Inter' } }];
+            const edges = [];
+
+            Object.values(AppState.notes).forEach(note => {
+                const headings = extractHeadings(note.content);
+                nodes.push(createNoteGraphNode(note, { shape: 'box', level: 1, title: `${getNotePath(note)}\n${headings.length || 'Sin'} encabezados` }));
+                edges.push({ from: 'mindmap_root', to: note.id, arrows: 'to', color: { color: '#6d28d9' } });
+
+                const headingStack = [{ level: 0, id: note.id }];
+                headings.forEach((heading, index) => {
+                    while (headingStack.length > 1 && headingStack[headingStack.length - 1].level >= heading.level) {
+                        headingStack.pop();
+                    }
+                    const parent = headingStack[headingStack.length - 1];
+                    const headingId = `mindmap_heading_${note.id}_${index}`;
+                    nodes.push({
+                        id: headingId,
+                        label: heading.label,
+                        shape: 'box',
+                        level: heading.level + 1,
+                        color: { background: '#312e81', border: '#4c1d95' },
+                        font: { color: '#ede9fe', face: 'Inter', size: Math.max(11, 18 - heading.level) }
+                    });
+                    edges.push({ from: parent.id, to: headingId, arrows: 'to', color: { color: '#8b5cf6' }, smooth: { type: 'cubicBezier' } });
+                    headingStack.push({ level: heading.level, id: headingId });
+                });
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', nodeSpacing: 150, levelSeparation: 180 } }, physics: false }) };
+        }
+
+        function buildAlphabeticalGraph() {
+            const nodes = [];
+            const edges = [];
+            const buckets = new Map();
+
+            Object.values(AppState.notes).sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })).forEach(note => {
+                const bucket = getAlphabeticalBucket(note.title);
+                if (!buckets.has(bucket.id)) {
+                    buckets.set(bucket.id, bucket);
+                    nodes.push({ id: bucket.id, label: bucket.label, shape: 'box', level: 0, color: { background: '#155e75', border: '#164e63' }, font: { color: '#cffafe', face: 'Inter' } });
+                }
+                nodes.push(createNoteGraphNode(note, { level: 1, shape: 'box' }));
+                edges.push({ from: bucket.id, to: note.id, arrows: 'to', color: { color: '#0891b2' } });
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'UD', sortMethod: 'directed', nodeSpacing: 120, levelSeparation: 140 } }, physics: false }) };
+        }
+
+        function buildSizeGraph() {
+            const nodes = [];
+            const edges = [];
+            const buckets = new Map();
+
+            Object.values(AppState.notes).forEach(note => {
+                const bucket = getSizeBucket(note.content);
+                if (!buckets.has(bucket.id)) {
+                    buckets.set(bucket.id, bucket);
+                    nodes.push({ id: bucket.id, label: bucket.label, shape: 'database', level: bucket.level, color: { background: bucket.color, border: bucket.color }, font: { color: '#fff', face: 'Inter' } });
+                }
+                const words = note.content.trim().split(/\s+/).filter(Boolean).length;
+                nodes.push(createNoteGraphNode(note, { size: Math.min(12 + Math.sqrt(words) * 2, 45), title: `${getNotePath(note)}\n${words} palabras` }));
+                edges.push({ from: bucket.id, to: note.id, color: { color: bucket.color } });
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ physics: { barnesHut: { gravitationalConstant: -2400, springLength: 130 }, stabilization: { iterations: 130 } } }) };
+        }
+
+        function buildOrphansGraph() {
+            const counts = buildLinkConnectionCounts();
+            const groups = [
+                { id: 'connected_notes', label: 'Conectadas', color: '#166534' },
+                { id: 'orphan_notes', label: 'Huérfanas', color: '#991b1b' }
+            ];
+            const nodes = groups.map((group, index) => ({ id: group.id, label: group.label, shape: 'box', level: index, color: { background: group.color, border: group.color }, font: { color: '#fff', face: 'Inter' } }));
+            const edges = [];
+
+            Object.values(AppState.notes).forEach(note => {
+                const count = counts[note.id] || 0;
+                const groupId = count > 0 ? 'connected_notes' : 'orphan_notes';
+                nodes.push(createNoteGraphNode(note, { shape: count > 0 ? 'dot' : 'triangle', title: `${getNotePath(note)}\n${count} conexiones` }));
+                edges.push({ from: groupId, to: note.id, arrows: 'to', color: { color: count > 0 ? '#22c55e' : '#ef4444' } });
+            });
+
+            return { nodes, edges, options: getBaseGraphOptions({ layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', nodeSpacing: 160, levelSeparation: 180 } }, physics: false }) };
+        }
+
         function buildGraphDataForMode(mode) {
             switch (mode) {
+                case 'mindmap': return buildMindmapGraph();
                 case 'folders': return buildFoldersGraph();
                 case 'tags': return buildTagsGraph();
                 case 'modified': return buildModifiedGraph();
+                case 'alphabetical': return buildAlphabeticalGraph();
+                case 'size': return buildSizeGraph();
+                case 'orphans': return buildOrphansGraph();
                 case 'kanban': return buildKanbanGraph();
                 case 'links':
                 default: return buildLinksGraph();
