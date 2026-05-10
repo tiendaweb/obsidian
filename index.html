@@ -134,6 +134,30 @@
         
         /* Utility classes */
         .hidden { display: none !important; }
+
+        /* Collapsed sidebar state */
+        #sidebar.sidebar-collapsed .sidebar-collapsible,
+        #file-list span.sidebar-collapsed {
+            display: none !important;
+        }
+        #sidebar.sidebar-collapsed .sidebar-header {
+            justify-content: center;
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+        #sidebar.sidebar-collapsed .sidebar-actions {
+            flex-direction: column;
+            align-items: center;
+        }
+        #sidebar.sidebar-collapsed .sidebar-spacer {
+            display: none;
+        }
+        #sidebar.sidebar-collapsed .file-item {
+            justify-content: center;
+        }
+        #sidebar.sidebar-collapsed .file-item-icon {
+            margin-right: 0;
+        }
     </style>
 </head>
 <body class="bg-obsidian-bg text-obsidian-text h-screen overflow-hidden flex dark">
@@ -142,22 +166,22 @@
     <!-- Sidebar -->
     <div class="w-64 bg-obsidian-sidebar border-r border-obsidian-border flex flex-col h-full flex-shrink-0 transition-all duration-300" id="sidebar">
         <!-- Sidebar Header -->
-        <div class="p-4 border-b border-obsidian-border flex justify-between items-center">
-            <h1 class="font-bold text-lg truncate">Mi Bóveda</h1>
+        <div class="sidebar-header p-4 border-b border-obsidian-border flex justify-between items-center">
+            <h1 class="sidebar-collapsible font-bold text-lg truncate">Mi Bóveda</h1>
             <button id="toggle-sidebar" class="text-obsidian-muted hover:text-white transition-colors" title="Colapsar panel">
                 <i data-lucide="panel-left-close" class="w-5 h-5"></i>
             </button>
         </div>
 
         <!-- Sidebar Actions -->
-        <div class="flex p-2 gap-1 border-b border-obsidian-border">
+        <div class="sidebar-actions flex p-2 gap-1 border-b border-obsidian-border">
             <button id="btn-new-note" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors" title="Nueva nota">
                 <i data-lucide="file-plus" class="w-5 h-5"></i>
             </button>
             <button id="btn-graph-view" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors" title="Vista de Grafo">
                 <i data-lucide="network" class="w-5 h-5"></i>
             </button>
-            <div class="flex-grow"></div>
+            <div class="sidebar-spacer flex-grow"></div>
             <label for="zip-upload" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors cursor-pointer" title="Importar Zip">
                 <i data-lucide="folder-archive" class="w-5 h-5"></i>
                 <input type="file" id="zip-upload" accept=".zip" class="hidden">
@@ -248,11 +272,13 @@
             notes: {}, // { "filename.md": { title: "Title", content: "...", id: "uuid", modified: timestamp } }
             currentNoteId: null,
             viewMode: 'edit', // 'edit', 'preview', 'graph'
-            isSidebarOpen: true
+            isSidebarOpen: true,
+            sidebarCollapsed: false
         };
 
         // Database Keys
         const DB_NOTES_KEY = 'obsidian_clone_notes';
+        const DB_UI_KEY = 'obsidian_clone_ui_state';
 
         // --- DOM Elements ---
         const els = {
@@ -370,7 +396,33 @@
 
         // --- STREAMING_CHUNK:Gestión de Datos (LocalForage) ---
 
+        async function loadUiState() {
+            try {
+                const savedUiState = await localforage.getItem(DB_UI_KEY);
+                if (savedUiState && typeof savedUiState.sidebarCollapsed === 'boolean') {
+                    AppState.sidebarCollapsed = savedUiState.sidebarCollapsed;
+                    AppState.isSidebarOpen = !savedUiState.sidebarCollapsed;
+                }
+            } catch (err) {
+                console.error("Error cargando estado de la interfaz:", err);
+            } finally {
+                applySidebarState();
+            }
+        }
+
+        async function saveUiState() {
+            try {
+                await localforage.setItem(DB_UI_KEY, {
+                    sidebarCollapsed: AppState.sidebarCollapsed
+                });
+            } catch (err) {
+                console.error("Error guardando estado de la interfaz:", err);
+            }
+        }
+
         async function loadNotes() {
+            await loadUiState();
+
             try {
                 const savedNotes = await localforage.getItem(DB_NOTES_KEY);
                 if (savedNotes) {
@@ -546,8 +598,8 @@
                 item.dataset.id = note.id;
                 
                 item.innerHTML = `
-                    <i data-lucide="file-text" class="w-4 h-4 mr-2 text-obsidian-muted shrink-0"></i>
-                    <span class="truncate text-sm select-none">${note.title}</span>
+                    <i data-lucide="file-text" class="file-item-icon w-4 h-4 mr-2 text-obsidian-muted shrink-0"></i>
+                    <span class="sidebar-collapsible truncate text-sm select-none ${AppState.sidebarCollapsed ? 'sidebar-collapsed' : ''}">${note.title}</span>
                 `;
                 
                 item.addEventListener('click', () => {
@@ -562,6 +614,28 @@
                 els.fileList.appendChild(item);
             });
             lucide.createIcons({ root: els.fileList });
+        }
+
+        function updateSidebarToggleIcon() {
+            const iconName = AppState.sidebarCollapsed ? 'panel-left-open' : 'panel-left-close';
+            els.toggleSidebarBtn.innerHTML = `<i data-lucide="${iconName}" class="w-5 h-5"></i>`;
+            els.toggleSidebarBtn.title = AppState.sidebarCollapsed ? 'Expandir panel' : 'Colapsar panel';
+            lucide.createIcons({ root: els.toggleSidebarBtn });
+        }
+
+        function applySidebarState() {
+            AppState.isSidebarOpen = !AppState.sidebarCollapsed;
+            els.sidebar.classList.toggle('sidebar-collapsed', AppState.sidebarCollapsed);
+            els.sidebar.classList.toggle('w-64', !AppState.sidebarCollapsed);
+            els.sidebar.classList.toggle('w-14', AppState.sidebarCollapsed);
+            updateSidebarToggleIcon();
+        }
+
+        function setSidebarCollapsed(collapsed) {
+            AppState.sidebarCollapsed = collapsed;
+            applySidebarState();
+            renderFileList();
+            saveUiState();
         }
 
         function setViewMode(mode) {
@@ -826,12 +900,7 @@
 
         // Sidebar Toggle
         els.toggleSidebarBtn.addEventListener('click', () => {
-            AppState.isSidebarOpen = !AppState.isSidebarOpen;
-            if (AppState.isSidebarOpen) {
-                els.sidebar.classList.remove('-ml-64');
-            } else {
-                els.sidebar.classList.add('-ml-64');
-            }
+            setSidebarCollapsed(!AppState.sidebarCollapsed);
         });
 
         // New Note Button
