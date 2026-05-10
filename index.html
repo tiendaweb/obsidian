@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian Web Clone</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- JSZip for handling zip files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Vis-Network for the graph view -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- LocalForage for robust local storage (IndexedDB) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        obsidian: {
+                            bg: '#1e1e1e',
+                            sidebar: '#252525',
+                            hover: '#2a2a2a',
+                            border: '#363636',
+                            text: '#dcddde',
+                            muted: '#999999',
+                            accent: '#7c3aed' // Purple accent
+                        }
+                    },
+                    typography: (theme) => ({
+                        DEFAULT: {
+                            css: {
+                                color: theme('colors.obsidian.text'),
+                                a: {
+                                    color: theme('colors.obsidian.accent'),
+                                    '&:hover': {
+                                        color: theme('colors.purple.400'),
+                                    },
+                                    textDecoration: 'none',
+                                },
+                                h1: { color: theme('colors.white') },
+                                h2: { color: theme('colors.white') },
+                                h3: { color: theme('colors.white') },
+                                h4: { color: theme('colors.white') },
+                                strong: { color: theme('colors.white') },
+                                code: { color: theme('colors.pink.400') },
+                                blockquote: {
+                                    color: theme('colors.obsidian.muted'),
+                                    borderLeftColor: theme('colors.obsidian.border'),
+                                },
+                            },
+                        },
+                    }),
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #363636;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Basic reset and typography */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Editor textarea styling */
+        #editor {
+            resize: none;
+            outline: none;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            line-height: 1.6;
+        }
+
+        /* Markdown content styling */
+        .markdown-body {
+            line-height: 1.6;
+        }
+        .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+            border-bottom: 1px solid #363636;
+            padding-bottom: 0.3em;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+        }
+        
+        .markdown-body ul { list-style-type: disc; padding-left: 2em; margin-bottom: 1em; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 2em; margin-bottom: 1em; }
+        .markdown-body pre { background-color: #0d0d0d; padding: 1em; border-radius: 0.5em; overflow-x: auto; }
+        .markdown-body code { background-color: #2a2a2a; padding: 0.2em 0.4em; border-radius: 0.3em; font-family: monospace; }
+        
+        /* Internal link styling */
+        .internal-link {
+            color: #a78bfa; /* purple-400 */
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-color: transparent;
+            transition: text-decoration-color 0.2s;
+        }
+        .internal-link:hover {
+            text-decoration-color: #a78bfa;
+        }
+        .internal-link.missing {
+            color: #9ca3af; /* gray-400 */
+            opacity: 0.8;
+        }
+
+        /* Vis network container */
+        #graph-container {
+            width: 100%;
+            height: 100%;
+            background-color: #1e1e1e;
+        }
+        
+        /* Utility classes */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="bg-obsidian-bg text-obsidian-text h-screen overflow-hidden flex dark">
+
+    
+    <!-- Sidebar -->
+    <div class="w-64 bg-obsidian-sidebar border-r border-obsidian-border flex flex-col h-full flex-shrink-0 transition-all duration-300" id="sidebar">
+        <!-- Sidebar Header -->
+        <div class="p-4 border-b border-obsidian-border flex justify-between items-center">
+            <h1 class="font-bold text-lg truncate">Mi Bóveda</h1>
+            <button id="toggle-sidebar" class="text-obsidian-muted hover:text-white transition-colors" title="Colapsar panel">
+                <i data-lucide="panel-left-close" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <!-- Sidebar Actions -->
+        <div class="flex p-2 gap-1 border-b border-obsidian-border">
+            <button id="btn-new-note" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors" title="Nueva nota">
+                <i data-lucide="file-plus" class="w-5 h-5"></i>
+            </button>
+            <button id="btn-graph-view" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors" title="Vista de Grafo">
+                <i data-lucide="network" class="w-5 h-5"></i>
+            </button>
+            <div class="flex-grow"></div>
+            <label for="zip-upload" class="p-2 rounded hover:bg-obsidian-hover text-obsidian-muted hover:text-white transition-colors cursor-pointer" title="Importar Zip">
+                <i data-lucide="folder-archive" class="w-5 h-5"></i>
+                <input type="file" id="zip-upload" accept=".zip" class="hidden">
+            </label>
+        </div>
+
+        <!-- File List -->
+        <div class="flex-1 overflow-y-auto p-2" id="file-list">
+            <!-- Files will be injected here -->
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden relative" id="main-content">
+        
+        <!-- Tab Bar -->
+        <div class="h-10 bg-obsidian-bg border-b border-obsidian-border flex items-center px-2" id="tab-bar">
+            <!-- Active file tab will be shown here -->
+            <div id="active-tab" class="hidden flex items-center bg-obsidian-sidebar px-3 py-1.5 rounded-t-md border-t border-l border-r border-obsidian-border text-sm max-w-xs">
+                <span id="tab-title" class="truncate mr-2">...</span>
+                <span id="tab-status" class="w-2 h-2 rounded-full bg-obsidian-muted mx-1 hidden"></span>
+            </div>
+            
+            <div class="flex-grow"></div>
+            
+            <!-- Editor / Preview Toggle -->
+            <div class="flex rounded-md border border-obsidian-border overflow-hidden mr-2 hidden" id="view-toggles">
+                <button id="btn-edit-mode" class="px-3 py-1 text-xs bg-obsidian-hover text-white">Editar</button>
+                <button id="btn-preview-mode" class="px-3 py-1 text-xs bg-obsidian-bg text-obsidian-muted hover:text-white">Leer</button>
+            </div>
+            
+            <!-- Header Actions -->
+             <button id="btn-delete-note" class="p-1.5 rounded hover:bg-red-900/30 text-obsidian-muted hover:text-red-400 transition-colors hidden mr-2" title="Eliminar nota">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- Workspace Container -->
+        <div class="flex-1 relative overflow-hidden">
+            
+            <!-- Empty State -->
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-obsidian-muted">
+                <i data-lucide="book-open" class="w-16 h-16 mb-4 opacity-50"></i>
+                <p class="text-lg">No hay ningún archivo abierto</p>
+                <p class="text-sm mt-2">Crea una nota o selecciona una del panel lateral</p>
+            </div>
+
+            <!-- Note Editor Area -->
+            <div id="note-view" class="absolute inset-0 hidden flex flex-col">
+                <!-- Title Input -->
+                <div class="px-8 pt-8 pb-4">
+                    <input type="text" id="note-title" class="w-full bg-transparent text-3xl font-bold outline-none text-white placeholder-obsidian-muted" placeholder="Sin título">
+                </div>
+                
+                <!-- Content Area (Scrollable) -->
+                <div class="flex-1 overflow-y-auto px-8 pb-8 relative">
+                    <!-- Textarea for Editing -->
+                    <textarea id="editor" class="w-full h-full bg-transparent text-obsidian-text resize-none border-none outline-none block" placeholder="Empieza a escribir aquí..."></textarea>
+                    
+                    <!-- Div for Reading/Previewing -->
+                    <div id="preview" class="w-full markdown-body hidden pb-32"></div>
+                </div>
+            </div>
+
+            <!-- Graph View Area -->
+            <div id="graph-view" class="absolute inset-0 hidden">
+                <div id="graph-container"></div>
+                <div class="absolute top-4 left-4 bg-obsidian-sidebar/80 p-2 rounded border border-obsidian-border backdrop-blur-sm z-10 pointer-events-none">
+                    <h3 class="text-white font-semibold text-sm mb-1">Vista de Grafo</h3>
+                    <p class="text-xs text-obsidian-muted">Usa el scroll para hacer zoom, arrastra para mover.</p>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-obsidian-accent text-white px-4 py-2 rounded shadow-lg transform transition-transform duration-300 translate-y-20 opacity-0 z-50">
+        Mensaje
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // --- Application State ---
+        const AppState = {
+            notes: {}, // { "filename.md": { title: "Title", content: "...", id: "uuid", modified: timestamp } }
+            currentNoteId: null,
+            viewMode: 'edit', // 'edit', 'preview', 'graph'
+            isSidebarOpen: true
+        };
+
+        // Database Keys
+        const DB_NOTES_KEY = 'obsidian_clone_notes';
+
+        // --- DOM Elements ---
+        const els = {
+            sidebar: document.getElementById('sidebar'),
+            toggleSidebarBtn: document.getElementById('toggle-sidebar'),
+            fileList: document.getElementById('file-list'),
+            btnNewNote: document.getElementById('btn-new-note'),
+            btnGraphView: document.getElementById('btn-graph-view'),
+            zipUpload: document.getElementById('zip-upload'),
+            
+            emptyState: document.getElementById('empty-state'),
+            noteView: document.getElementById('note-view'),
+            graphView: document.getElementById('graph-view'),
+            
+            activeTab: document.getElementById('active-tab'),
+            tabTitle: document.getElementById('tab-title'),
+            tabStatus: document.getElementById('tab-status'),
+            viewToggles: document.getElementById('view-toggles'),
+            btnEditMode: document.getElementById('btn-edit-mode'),
+            btnPreviewMode: document.getElementById('btn-preview-mode'),
+            btnDeleteNote: document.getElementById('btn-delete-note'),
+            
+            noteTitleInput: document.getElementById('note-title'),
+            editor: document.getElementById('editor'),
+            preview: document.getElementById('preview'),
+            
+            graphContainer: document.getElementById('graph-container'),
+            toast: document.getElementById('toast')
+        };
+
+        // --- Vis Network Instance ---
+        let network = null;
+        // --- Save Timeout for Debouncing ---
+        let saveTimeout = null;
+
+        // --- STREAMING_CHUNK:Funciones de Utilidad ---
+
+        // Generar un ID único
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2);
+        }
+
+        // Mostrar notificación tipo Toast
+        function showToast(message, type = 'info') {
+            els.toast.textContent = message;
+            if(type === 'error') {
+                els.toast.classList.replace('bg-obsidian-accent', 'bg-red-600');
+            } else {
+                els.toast.classList.replace('bg-red-600', 'bg-obsidian-accent');
+            }
+            
+            els.toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                els.toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Limpiar el nombre del archivo para que sea un ID válido o título por defecto
+        function sanitizeFilename(name) {
+            return name.replace(/\.md$/i, '');
+        }
+
+        // Parsear enlaces estilo Obsidian [[Nota Destino]]
+        // Devuelve un array de nombres de notas a las que se enlaza
+        function extractLinks(content) {
+            const regex = /\[\[(.*?)\]\]/g;
+            const links = new Set();
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                // Split by '|' in case of alias [[Link|Alias]] and take the first part
+                const linkTarget = match[1].split('|')[0].trim();
+                if(linkTarget) links.add(linkTarget);
+            }
+            return Array.from(links);
+        }
+
+        // Configurar Marked.js para manejar enlaces [[WikiLink]] a través del sistema de extensiones
+        const wikiLinkExtension = {
+            name: 'wikilink',
+            level: 'inline',
+            start(src) { return src.match(/\[\[/)?.index; }, // Le dice a marked dónde buscar
+            tokenizer(src, tokens) {
+                const rule = /^\[\[(.*?)\]\]/;
+                const match = rule.exec(src);
+                if (match) {
+                    return {
+                        type: 'wikilink',
+                        raw: match[0],
+                        text: match[1]
+                    };
+                }
+            },
+            renderer(token) {
+                const parts = token.text.split('|');
+                const target = parts[0].trim();
+                const alias = parts.length > 1 ? parts[1].trim() : target;
+                
+                // Buscar si la nota existe para darle estilo
+                const noteExists = Object.values(AppState.notes).some(n => n.title.toLowerCase() === target.toLowerCase());
+                const className = noteExists ? 'internal-link' : 'internal-link missing';
+                
+                return `<a class="${className}" data-target="${target}">${alias}</a>`;
+            }
+        };
+
+        // Extender marked usando el nuevo sistema
+        marked.use({ extensions: [wikiLinkExtension] });
+        
+        // Habilitar saltos de línea y otras opciones de Github Flavored Markdown
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+
+        // --- STREAMING_CHUNK:Gestión de Datos (LocalForage) ---
+
+        async function loadNotes() {
+            try {
+                const savedNotes = await localforage.getItem(DB_NOTES_KEY);
+                if (savedNotes) {
+                    AppState.notes = savedNotes;
+                } else {
+                    // Nota inicial por defecto si está vacío
+                    createNote("Bienvenido", "¡Bienvenido a tu clon de Obsidian!\n\nPuedes crear nuevas notas, escribir en **Markdown**, y enlazarlas usando `[[Nombre de la nota]]`.\n\nEjemplo: Prueba crear una nota y enlázala aquí.\n\nTambién puedes importar un archivo `.zip` que contenga archivos `.md`.");
+                }
+                renderFileList();
+            } catch (err) {
+                console.error("Error cargando notas:", err);
+                showToast("Error al cargar notas locales", "error");
+            }
+        }
+
+        async function saveNotes() {
+            try {
+                await localforage.setItem(DB_NOTES_KEY, AppState.notes);
+                els.tabStatus.classList.add('hidden'); // Ocultar indicador de guardado no guardado
+            } catch (err) {
+                console.error("Error guardando notas:", err);
+                showToast("Error al guardar", "error");
+            }
+        }
+
+        // Guardado con "Debounce" (espera a que el usuario deje de escribir)
+        function triggerAutoSave() {
+            els.tabStatus.classList.remove('hidden'); // Mostrar indicador de cambios sin guardar
+            
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                if (AppState.currentNoteId) {
+                    const note = AppState.notes[AppState.currentNoteId];
+                    if(note) {
+                        note.title = els.noteTitleInput.value.trim() || 'Sin título';
+                        note.content = els.editor.value;
+                        note.modified = Date.now();
+                        
+                        saveNotes();
+                        renderFileList(); // Actualizar lista (por si cambió el título)
+                        els.tabTitle.textContent = note.title;
+                        
+                        // Si estamos en vista de grafo, actualizarlo en background (costoso, mejor evitarlo en cada pulsación, pero lo hacemos por completitud)
+                        if(AppState.viewMode === 'graph') {
+                             renderGraph();
+                        }
+                    }
+                }
+            }, 1000); // Guardar 1 segundo después de dejar de escribir
+        }
+
+
+        // --- STREAMING_CHUNK:Lógica Core de Notas ---
+
+        function createNote(title = "Nueva Nota", content = "") {
+            const id = generateId();
+            // Asegurar título único si ya existe
+            let finalTitle = title;
+            let counter = 1;
+            while(Object.values(AppState.notes).some(n => n.title === finalTitle)) {
+                finalTitle = `${title} ${counter}`;
+                counter++;
+            }
+
+            AppState.notes[id] = {
+                id: id,
+                title: finalTitle,
+                content: content,
+                created: Date.now(),
+                modified: Date.now()
+            };
+            
+            saveNotes();
+            renderFileList();
+            openNote(id);
+            
+            // Foco en el título al crear
+            setTimeout(() => {
+                els.noteTitleInput.focus();
+                els.noteTitleInput.select();
+            }, 50);
+            
+            return id;
+        }
+
+        function deleteNote(id) {
+            if(confirm(`¿Estás seguro de eliminar la nota "${AppState.notes[id].title}"?`)) {
+                delete AppState.notes[id];
+                saveNotes();
+                renderFileList();
+                
+                if (AppState.currentNoteId === id) {
+                    closeNote();
+                }
+                
+                if(AppState.viewMode === 'graph') {
+                    renderGraph();
+                }
+            }
+        }
+
+        function openNote(id) {
+            const note = AppState.notes[id];
+            if (!note) return;
+
+            AppState.currentNoteId = id;
+            
+            // UI Updates
+            els.emptyState.classList.add('hidden');
+            els.graphView.classList.add('hidden');
+            els.noteView.classList.remove('hidden');
+            
+            els.activeTab.classList.remove('hidden');
+            els.viewToggles.classList.remove('hidden');
+            els.btnDeleteNote.classList.remove('hidden');
+            
+            els.tabTitle.textContent = note.title;
+            els.noteTitleInput.value = note.title;
+            els.editor.value = note.content;
+            
+            // Actualizar clase activa en la lista de archivos
+            document.querySelectorAll('.file-item').forEach(el => {
+                if(el.dataset.id === id) el.classList.add('bg-obsidian-hover', 'border-obsidian-border');
+                else el.classList.remove('bg-obsidian-hover', 'border-obsidian-border');
+            });
+
+            // Cambiar a modo edición por defecto al abrir
+            setViewMode('edit');
+        }
+
+        function closeNote() {
+            AppState.currentNoteId = null;
+            
+            els.noteView.classList.add('hidden');
+            els.graphView.classList.add('hidden');
+            els.emptyState.classList.remove('hidden');
+            
+            els.activeTab.classList.add('hidden');
+            els.viewToggles.classList.add('hidden');
+            els.btnDeleteNote.classList.add('hidden');
+            
+            document.querySelectorAll('.file-item').forEach(el => {
+                el.classList.remove('bg-obsidian-hover', 'border-obsidian-border');
+            });
+        }
+
+        // Navegar a una nota por su título (para los enlaces internos)
+        function navigateToNote(title) {
+            const targetTitle = title.toLowerCase();
+            const noteEntry = Object.entries(AppState.notes).find(([id, note]) => note.title.toLowerCase() === targetTitle);
+            
+            if (noteEntry) {
+                openNote(noteEntry[0]);
+            } else {
+                // Crear la nota si no existe
+                if(confirm(`La nota "${title}" no existe. ¿Deseas crearla?`)) {
+                    createNote(title, `# ${title}\n\n`);
+                }
+            }
+        }
+
+        // --- STREAMING_CHUNK:Manejo de la Interfaz de Usuario ---
+
+        function renderFileList() {
+            els.fileList.innerHTML = '';
+            
+            // Ordenar por fecha de modificación descendente
+            const sortedNotes = Object.values(AppState.notes).sort((a, b) => b.modified - a.modified);
+
+            sortedNotes.forEach(note => {
+                const item = document.createElement('div');
+                item.className = `file-item flex items-center p-2 rounded cursor-pointer mb-1 border border-transparent hover:bg-obsidian-hover transition-colors ${note.id === AppState.currentNoteId ? 'bg-obsidian-hover border-obsidian-border' : ''}`;
+                item.dataset.id = note.id;
+                
+                item.innerHTML = `
+                    <i data-lucide="file-text" class="w-4 h-4 mr-2 text-obsidian-muted shrink-0"></i>
+                    <span class="truncate text-sm select-none">${note.title}</span>
+                `;
+                
+                item.addEventListener('click', () => {
+                    // Si ya estamos en la vista de grafo, y hacemos click, vamos a la nota
+                    if(AppState.viewMode === 'graph') {
+                        openNote(note.id);
+                    } else {
+                        openNote(note.id);
+                    }
+                });
+                
+                els.fileList.appendChild(item);
+            });
+            lucide.createIcons({ root: els.fileList });
+        }
+
+        function setViewMode(mode) {
+            AppState.viewMode = mode;
+            
+            // Reset Button Styles
+            els.btnEditMode.classList.remove('bg-obsidian-hover', 'text-white');
+            els.btnEditMode.classList.add('bg-obsidian-bg', 'text-obsidian-muted');
+            
+            els.btnPreviewMode.classList.remove('bg-obsidian-hover', 'text-white');
+            els.btnPreviewMode.classList.add('bg-obsidian-bg', 'text-obsidian-muted');
+
+            els.btnGraphView.classList.remove('text-obsidian-accent');
+            els.btnGraphView.classList.add('text-obsidian-muted');
+
+            if (mode === 'edit') {
+                els.btnEditMode.classList.replace('bg-obsidian-bg', 'bg-obsidian-hover');
+                els.btnEditMode.classList.replace('text-obsidian-muted', 'text-white');
+                
+                els.editor.classList.remove('hidden');
+                els.preview.classList.add('hidden');
+                
+                // Set focus to editor
+                els.editor.focus();
+
+            } else if (mode === 'preview') {
+                els.btnPreviewMode.classList.replace('bg-obsidian-bg', 'bg-obsidian-hover');
+                els.btnPreviewMode.classList.replace('text-obsidian-muted', 'text-white');
+                
+                els.editor.classList.add('hidden');
+                els.preview.classList.remove('hidden');
+                
+                // Parse Markdown to HTML
+                let htmlContent = marked.parse(els.editor.value);
+                
+                // Handle markdown checkboxes (Github flavored)
+                htmlContent = htmlContent.replace(/\[ \]/g, '<input type="checkbox" disabled>');
+                htmlContent = htmlContent.replace(/\[x\]/g, '<input type="checkbox" checked disabled>');
+
+                els.preview.innerHTML = htmlContent;
+
+                // Add event listeners to internal links
+                els.preview.querySelectorAll('.internal-link').forEach(link => {
+                    link.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const target = e.target.getAttribute('data-target');
+                        navigateToNote(target);
+                    });
+                });
+            } else if (mode === 'graph') {
+                els.btnGraphView.classList.replace('text-obsidian-muted', 'text-obsidian-accent');
+                
+                els.noteView.classList.add('hidden');
+                els.emptyState.classList.add('hidden');
+                els.graphView.classList.remove('hidden');
+                
+                // Ocultar controles específicos de notas
+                els.activeTab.classList.add('hidden');
+                els.viewToggles.classList.add('hidden');
+                els.btnDeleteNote.classList.add('hidden');
+
+                renderGraph();
+            }
+        }
+
+        // --- STREAMING_CHUNK:Vista de Grafo (Vis-Network) ---
+
+        function renderGraph() {
+            const nodes = [];
+            const edges = [];
+            const nodeIds = new Map(); // Map title (lowercase) to node ID
+
+            // 1. Crear nodos para todas las notas existentes
+            Object.values(AppState.notes).forEach(note => {
+                const lowerTitle = note.title.toLowerCase();
+                nodeIds.set(lowerTitle, note.id);
+                
+                // Determinar tamaño basado en conexiones (se calculará luego, por ahora base)
+                nodes.push({
+                    id: note.id,
+                    label: note.title,
+                    shape: 'dot',
+                    size: 15,
+                    color: {
+                        background: '#7c3aed', // Purple accent
+                        border: '#5b21b6',
+                        highlight: { background: '#8b5cf6', border: '#7c3aed' }
+                    },
+                    font: { color: '#dcddde', size: 14, face: 'Inter' }
+                });
+            });
+
+            // 2. Analizar enlaces y crear aristas
+            // También crearemos "nodos fantasmas" para enlaces a notas que no existen
+            let ghostNodeIdCounter = -1;
+
+            Object.values(AppState.notes).forEach(note => {
+                const links = extractLinks(note.content);
+                
+                links.forEach(linkTarget => {
+                    const lowerTarget = linkTarget.toLowerCase();
+                    let targetId = nodeIds.get(lowerTarget);
+
+                    // Si el enlace apunta a una nota que no existe, crear nodo fantasma
+                    if (!targetId) {
+                        targetId = `ghost_${ghostNodeIdCounter--}`;
+                        nodeIds.set(lowerTarget, targetId);
+                        
+                        nodes.push({
+                            id: targetId,
+                            label: linkTarget,
+                            shape: 'dot',
+                            size: 10,
+                            color: {
+                                background: '#3f3f46', // Dark gray
+                                border: '#27272a',
+                            },
+                            font: { color: '#71717a', size: 12, face: 'Inter', italic: true }
+                        });
+                    }
+
+                    // Crear la conexión
+                    edges.push({
+                        from: note.id,
+                        to: targetId,
+                        color: { color: '#52525b', highlight: '#7c3aed' },
+                        width: 1,
+                        smooth: { type: 'continuous' }
+                    });
+                });
+            });
+
+            // 3. Opcional: Aumentar tamaño de nodos más conectados
+            const connectionCounts = {};
+            edges.forEach(edge => {
+                connectionCounts[edge.from] = (connectionCounts[edge.from] || 0) + 1;
+                connectionCounts[edge.to] = (connectionCounts[edge.to] || 0) + 1;
+            });
+
+            nodes.forEach(node => {
+                const count = connectionCounts[node.id] || 0;
+                // Si no es un nodo fantasma (id numérico o alfanumérico largo)
+                if (typeof node.id === 'string' && !node.id.startsWith('ghost_')) {
+                    node.size = Math.min(15 + (count * 2), 40); // Cap size at 40
+                }
+            });
+
+
+            const data = {
+                nodes: new vis.DataSet(nodes),
+                edges: new vis.DataSet(edges)
+            };
+
+            const options = {
+                physics: {
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 150,
+                        springConstant: 0.04,
+                        damping: 0.09
+                    },
+                    stabilization: { iterations: 150 }
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200,
+                    zoomView: true,
+                    dragView: true
+                }
+            };
+
+            // Destruir red anterior si existe
+            if (network) {
+                network.destroy();
+            }
+
+            network = new vis.Network(els.graphContainer, data, options);
+
+            // Manejar click en nodos
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    if (typeof nodeId === 'string' && nodeId.startsWith('ghost_')) {
+                        // Click en nota fantasma -> preguntar si crear
+                        const clickedNode = nodes.find(n => n.id === nodeId);
+                        if(clickedNode && confirm(`La nota "${clickedNode.label}" no existe. ¿Deseas crearla?`)) {
+                            createNote(clickedNode.label, `# ${clickedNode.label}\n\n`);
+                        }
+                    } else {
+                        // Click en nota existente -> abrirla
+                        openNote(nodeId);
+                    }
+                }
+            });
+        }
+
+        // --- STREAMING_CHUNK:Importación de Archivos ZIP ---
+
+        els.zipUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            els.zipUpload.value = ''; // Reset input
+            showToast("Procesando archivo ZIP...", "info");
+
+            try {
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                let importedCount = 0;
+
+                // Process each file in the zip
+                const filePromises = [];
+                
+                contents.forEach((relativePath, zipEntry) => {
+                    // Solo importar archivos .md, e ignorar archivos de macOS/carpetas ocultas
+                    if (!zipEntry.dir && relativePath.endsWith('.md') && !relativePath.includes('__MACOSX') && !relativePath.startsWith('.')) {
+                        
+                        filePromises.push(
+                            zipEntry.async('text').then(content => {
+                                // Extraer el nombre del archivo sin ruta ni extensión
+                                const filename = relativePath.split('/').pop();
+                                const title = sanitizeFilename(filename);
+                                
+                                // Generar ID
+                                const id = generateId();
+                                
+                                // Guardar en estado (sobreescribimos si hay conflicto por ahora para simplificar)
+                                AppState.notes[id] = {
+                                    id: id,
+                                    title: title,
+                                    content: content,
+                                    created: Date.now(),
+                                    modified: zipEntry.date ? zipEntry.date.getTime() : Date.now()
+                                };
+                                importedCount++;
+                            })
+                        );
+                    }
+                });
+
+                await Promise.all(filePromises);
+                
+                if (importedCount > 0) {
+                    await saveNotes();
+                    renderFileList();
+                    showToast(`¡Se importaron ${importedCount} notas exitosamente!`);
+                    
+                    // Si estamos en vista de grafo, actualizar
+                    if(AppState.viewMode === 'graph') renderGraph();
+                } else {
+                    showToast("No se encontraron archivos .md válidos en el ZIP.", "error");
+                }
+
+            } catch (err) {
+                console.error("Error leyendo ZIP:", err);
+                showToast("Error al procesar el archivo ZIP", "error");
+            }
+        });
+
+        // --- STREAMING_CHUNK:Configuración de Event Listeners ---
+
+        // Sidebar Toggle
+        els.toggleSidebarBtn.addEventListener('click', () => {
+            AppState.isSidebarOpen = !AppState.isSidebarOpen;
+            if (AppState.isSidebarOpen) {
+                els.sidebar.classList.remove('-ml-64');
+            } else {
+                els.sidebar.classList.add('-ml-64');
+            }
+        });
+
+        // New Note Button
+        els.btnNewNote.addEventListener('click', () => createNote());
+
+        // Delete Note Button
+        els.btnDeleteNote.addEventListener('click', () => {
+            if(AppState.currentNoteId) deleteNote(AppState.currentNoteId);
+        });
+
+        // View Toggles
+        els.btnEditMode.addEventListener('click', () => setViewMode('edit'));
+        els.btnPreviewMode.addEventListener('click', () => setViewMode('preview'));
+        
+        // Graph View Button
+        els.btnGraphView.addEventListener('click', () => {
+            if(AppState.viewMode === 'graph') {
+                // Si ya estamos en grafo, intentamos volver a la última nota si la hay, o cerramos
+                if(AppState.currentNoteId) {
+                    openNote(AppState.currentNoteId);
+                } else {
+                    closeNote();
+                }
+            } else {
+                setViewMode('graph');
+            }
+        });
+
+        // Editor Events (Auto-save)
+        els.noteTitleInput.addEventListener('input', triggerAutoSave);
+        els.editor.addEventListener('input', triggerAutoSave);
+        
+        // Manejar tabulador en el editor para indentar en lugar de cambiar el foco
+        els.editor.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                // Insertar 4 espacios
+                this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 4;
+                triggerAutoSave();
+            }
+        });
+
+        // --- STREAMING_CHUNK:Inicialización final ---
+        window.addEventListener('DOMContentLoaded', () => {
+            loadNotes();
+        });
+
+    </script>
+</body>
+</html>
